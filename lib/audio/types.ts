@@ -7,7 +7,6 @@
  * Currently Supported TTS Providers:
  * - OpenAI TTS (https://platform.openai.com/docs/guides/text-to-speech)
  * - Azure TTS (https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech)
- * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
@@ -80,10 +79,9 @@
 export type TTSProviderId =
   | 'openai-tts'
   | 'azure-tts'
-  | 'glm-tts'
   | 'qwen-tts'
-  | 'elevenlabs-tts'
-  | 'browser-native-tts';
+  | 'browser-native-tts'
+  | 'sarvam-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'fish-audio-tts'
 // | 'cartesia-tts'
@@ -141,7 +139,7 @@ export interface TTSModelConfig {
  * Add new ASR providers here as union members.
  * Keep in sync with ASR_PROVIDERS registry in constants.ts
  */
-export type ASRProviderId = 'openai-whisper' | 'browser-native' | 'qwen-asr';
+export type ASRProviderId = 'openai-whisper' | 'browser-native' | 'qwen-asr' | 'sarvam-asr';
 // Add new ASR providers below (uncomment and modify):
 // | 'elevenlabs-asr'
 // | 'assemblyai-asr'

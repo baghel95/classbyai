@@ -58,12 +58,14 @@ export class ActionEngine {
   private stageStore: StageStore;
   private stageAPI: ReturnType<typeof createStageAPI>;
   private audioPlayer: AudioPlayer | null;
+  private userId: string | null = null;
   private effectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(stageStore: StageStore, audioPlayer?: AudioPlayer) {
+  constructor(stageStore: StageStore, audioPlayer?: AudioPlayer, userId?: string) {
     this.stageStore = stageStore;
     this.stageAPI = createStageAPI(stageStore);
     this.audioPlayer = audioPlayer ?? null;
+    this.userId = userId ?? null;
   }
 
   /** Clean up timers when the engine is no longer needed */
@@ -169,7 +171,7 @@ export class ActionEngine {
 
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-      this.audioPlayer!.play(action.audioId || '', action.audioUrl)
+      this.audioPlayer!.play(action.audioId || '', this.userId || '', action.audioUrl)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })

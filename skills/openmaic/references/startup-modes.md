@@ -2,7 +2,7 @@
 
 ## Goal
 
-Help the user choose how OpenMAIC should run before you start anything.
+Help the user choose how Classby-AI should run before you start anything.
 
 ## Options
 

@@ -12,6 +12,12 @@ import type { SceneOutline } from '@/lib/types/generation';
 import type { UIMessage } from 'ai';
 import { createLogger } from '@/lib/logger';
 
+/**
+ * ! LEGACY DATABASE - DO NOT USE FOR NEW FEATURES
+ * This file contains the legacy IndexedDB (Dexie) schema and interactions.
+ * New data should be stored in Firebase (Firestore/Storage) via firebase-storage.ts.
+ */
+
 const log = createLogger('Database');
 
 /**

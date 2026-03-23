@@ -65,3 +65,6 @@ next-env.d.ts
 
 # docs
 /docs
+
+.gcs-service-account.json
+.classbyai-firebase.json

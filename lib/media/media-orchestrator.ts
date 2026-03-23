@@ -1,17 +1,14 @@
-/**
- * Media Generation Orchestrator
- *
- * Dispatches media generation API calls for all mediaGenerations across outlines.
- * Runs entirely on the frontend — calls /api/generate/image and /api/generate/video,
- * fetches result blobs, stores in IndexedDB, and updates the Zustand store.
- */
-
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
-import { db, mediaFileKey } from '@/lib/utils/database';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
+import { 
+  uploadToStorage, 
+  saveToFirestore, 
+  deleteFromFirestore, 
+  MEDIA_FILES_COLLECTION 
+} from '@/lib/utils/firebase-storage';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -31,6 +28,7 @@ class MediaApiError extends Error {
 export async function generateMediaForOutlines(
   outlines: SceneOutline[],
   stageId: string,
+  userId: string,
   abortSignal?: AbortSignal,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
@@ -59,7 +57,7 @@ export async function generateMediaForOutlines(
   // Process requests serially — image/video APIs have limited concurrency
   for (const req of allRequests) {
     if (abortSignal?.aborted) break;
-    await generateSingleMedia(req, stageId, abortSignal);
+    await generateSingleMedia(req, stageId, userId, abortSignal);
   }
 }
 
@@ -70,6 +68,13 @@ export async function retryMediaTask(elementId: string): Promise<void> {
   const store = useMediaGenerationStore.getState();
   const task = store.getTask(elementId);
   if (!task || task.status !== 'failed') return;
+  
+  // Try to get userId from the store state (if we added it)
+  const userId = (store as any).userId; 
+  if (!userId) {
+    log.error('Cannot retry media task: userId not found in store');
+    return;
+  }
 
   // Check if the corresponding generation type is still enabled in global settings
   const settings = useSettingsStore.getState();
@@ -82,9 +87,9 @@ export async function retryMediaTask(elementId: string): Promise<void> {
     return;
   }
 
-  // Remove persisted failure record from DB so a fresh result can be written
-  const dbKey = mediaFileKey(task.stageId, elementId);
-  await db.mediaFiles.delete(dbKey).catch(() => {});
+  // Remove persisted failure record from Firestore
+  const dbKey = `${task.stageId}:${elementId}`;
+  await deleteFromFirestore(MEDIA_FILES_COLLECTION, dbKey).catch(() => {});
 
   store.markPendingForRetry(elementId);
   await generateSingleMedia(
@@ -96,6 +101,7 @@ export async function retryMediaTask(elementId: string): Promise<void> {
       style: task.params.style,
     },
     task.stageId,
+    userId,
   );
 }
 
@@ -104,6 +110,7 @@ export async function retryMediaTask(elementId: string): Promise<void> {
 async function generateSingleMedia(
   req: MediaGenerationRequest,
   stageId: string,
+  userId: string,
   abortSignal?: AbortSignal,
 ): Promise<void> {
   const store = useMediaGenerationStore.getState();
@@ -131,27 +138,36 @@ async function generateSingleMedia(
     const blob = await fetchAsBlob(resultUrl);
     const posterBlob = posterUrl ? await fetchAsBlob(posterUrl).catch(() => undefined) : undefined;
 
-    // Store in IndexedDB
-    await db.mediaFiles.put({
-      id: mediaFileKey(stageId, req.elementId),
+    // Upload to Firebase Storage
+    const fileName = `${req.elementId}.${req.type === 'image' ? 'png' : 'mp4'}`;
+    const storagePath = `media/${stageId}/${fileName}`;
+    const finalUrl = await uploadToStorage(storagePath, blob, userId);
+
+    let finalPosterUrl: string | undefined;
+    if (posterBlob) {
+      const posterPath = `media/${stageId}/${req.elementId}_poster.jpg`;
+      finalPosterUrl = await uploadToStorage(posterPath, posterBlob, userId);
+    }
+
+    // Save metadata to Firestore
+    const dbKey = `${stageId}:${req.elementId}`;
+    await saveToFirestore(MEDIA_FILES_COLLECTION, dbKey, {
       stageId,
       type: req.type,
-      blob,
+      url: finalUrl,
+      posterUrl: finalPosterUrl,
       mimeType,
       size: blob.size,
-      poster: posterBlob,
       prompt: req.prompt,
       params: JSON.stringify({
         aspectRatio: req.aspectRatio,
         style: req.style,
       }),
       createdAt: Date.now(),
-    });
+    }, userId);
 
-    // Update store with object URL
-    const objectUrl = URL.createObjectURL(blob);
-    const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
-    useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+    // Update store with final URL
+    useMediaGenerationStore.getState().markDone(req.elementId, finalUrl, finalPosterUrl);
   } catch (err) {
     if (abortSignal?.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
@@ -159,26 +175,23 @@ async function generateSingleMedia(
     log.error(`Failed ${req.elementId}:`, message);
     useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
 
-    // Persist non-retryable failures to IndexedDB so they survive page refresh
+    // Persist non-retryable failures to Firestore
     if (errorCode) {
-      await db.mediaFiles
-        .put({
-          id: mediaFileKey(stageId, req.elementId),
-          stageId,
-          type: req.type,
-          blob: new Blob(), // empty placeholder
-          mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
-          size: 0,
-          prompt: req.prompt,
-          params: JSON.stringify({
-            aspectRatio: req.aspectRatio,
-            style: req.style,
-          }),
-          error: message,
-          errorCode,
-          createdAt: Date.now(),
-        })
-        .catch(() => {}); // best-effort
+      const dbKey = `${stageId}:${req.elementId}`;
+      await saveToFirestore(MEDIA_FILES_COLLECTION, dbKey, {
+        stageId,
+        type: req.type,
+        mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
+        size: 0,
+        prompt: req.prompt,
+        params: JSON.stringify({
+          aspectRatio: req.aspectRatio,
+          style: req.style,
+        }),
+        error: message,
+        errorCode,
+        createdAt: Date.now(),
+      }, userId).catch(() => {});
     }
   }
 }

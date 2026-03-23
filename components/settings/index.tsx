@@ -119,10 +119,10 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
   const names: Record<TTSProviderId, string> = {
     'openai-tts': t('settings.providerOpenAITTS'),
     'azure-tts': t('settings.providerAzureTTS'),
-    'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+    'sarvam-tts': t('settings.providerSarvamTTS'),
   };
   return names[providerId];
 }
@@ -132,6 +132,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     'openai-whisper': t('settings.providerOpenAIWhisper'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
+    'sarvam-asr': t('settings.providerSarvamASR'),
   };
   return names[providerId];
 }

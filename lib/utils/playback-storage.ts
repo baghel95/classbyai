@@ -1,11 +1,15 @@
 /**
- * Playback Storage - Persist playback engine state to IndexedDB
+ * Playback Storage - Persist playback engine state to Firestore
  *
  * Stores minimal state needed to resume playback from a breakpoint:
  * position (sceneIndex + actionIndex) and consumed discussions.
  */
 
-import { db } from './database';
+import { 
+  saveToFirestore, 
+  loadFromFirestore, 
+  deleteFromFirestore 
+} from './firebase-storage';
 
 export interface PlaybackSnapshot {
   sceneIndex: number;
@@ -14,6 +18,9 @@ export interface PlaybackSnapshot {
   sceneId?: string; // Scene this snapshot belongs to; discard on mismatch
 }
 
+/** Collection name */
+const PLAYBACK_COLLECTION = 'playbackStates';
+
 /**
  * Save playback state for a stage.
  * Each stage has at most one playback state record.
@@ -21,16 +28,16 @@ export interface PlaybackSnapshot {
 export async function savePlaybackState(
   stageId: string,
   snapshot: PlaybackSnapshot,
+  userId: string
 ): Promise<void> {
-  await db.playbackState.put({
+  await saveToFirestore(PLAYBACK_COLLECTION, stageId, {
     stageId,
     sceneIndex: snapshot.sceneIndex,
     actionIndex: snapshot.actionIndex,
     consumedDiscussions: snapshot.consumedDiscussions,
     sceneId: snapshot.sceneId,
     updatedAt: Date.now(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any);
+  }, userId);
 }
 
 /**
@@ -38,15 +45,14 @@ export async function savePlaybackState(
  * Returns null if no saved state exists.
  */
 export async function loadPlaybackState(stageId: string): Promise<PlaybackSnapshot | null> {
-  const record = await db.playbackState.get(stageId);
+  const record = await loadFromFirestore<any>(PLAYBACK_COLLECTION, stageId);
   if (!record) return null;
 
   return {
     sceneIndex: record.sceneIndex,
     actionIndex: record.actionIndex,
     consumedDiscussions: record.consumedDiscussions,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sceneId: (record as any).sceneId as string | undefined,
+    sceneId: record.sceneId,
   };
 }
 
@@ -54,5 +60,5 @@ export async function loadPlaybackState(stageId: string): Promise<PlaybackSnapsh
  * Clear playback state for a stage (e.g. on playback complete or stop).
  */
 export async function clearPlaybackState(stageId: string): Promise<void> {
-  await db.playbackState.delete(stageId);
+  await deleteFromFirestore(PLAYBACK_COLLECTION, stageId);
 }

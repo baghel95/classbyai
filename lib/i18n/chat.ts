@@ -1,77 +1,3 @@
-export const chatZhCN = {
-  chat: {
-    lecture: '授课',
-    noConversations: '暂无对话',
-    startConversation: '输入消息开始对话',
-    noMessages: '暂无消息',
-    ended: '已结束',
-    unknown: '未知',
-    stopDiscussion: '结束讨论',
-    endQA: '结束问答',
-    tabs: {
-      lecture: '笔记',
-      chat: '对话',
-    },
-    lectureNotes: {
-      empty: '播放课程后，笔记将在此显示',
-      emptyHint: '点击播放按钮开始授课',
-      pageLabel: '第 {n} 页',
-      currentPage: '当前页',
-    },
-    badge: {
-      qa: 'Q&A',
-      discussion: '讨论',
-      lecture: '授课',
-    },
-  },
-  actions: {
-    names: {
-      spotlight: '聚光灯',
-      laser: '激光笔',
-      wb_open: '打开白板',
-      wb_draw_text: '白板文本',
-      wb_draw_shape: '白板形状',
-      wb_draw_chart: '白板图表',
-      wb_draw_latex: '白板公式',
-      wb_draw_table: '白板表格',
-      wb_draw_line: '白板线条',
-      wb_clear: '清空白板',
-      wb_delete: '删除元素',
-      wb_close: '关闭白板',
-      discussion: '课堂讨论',
-    },
-    status: {
-      inputStreaming: '等待中',
-      inputAvailable: '执行中',
-      outputAvailable: '已完成',
-      outputError: '错误',
-      outputDenied: '已拒绝',
-      running: '执行中',
-      result: '已完成',
-      error: '错误',
-    },
-  },
-  agentBar: {
-    readyToLearn: '准备好一起学习了吗？',
-    expandedTitle: '课堂角色配置',
-    configTooltip: '点击配置课堂角色',
-    voiceLabel: '音色',
-    voiceLoading: '加载中...',
-    voiceAutoAssign: '音色将自动分配',
-  },
-  proactiveCard: {
-    discussion: '讨论',
-    join: '加入讨论',
-    skip: '跳过',
-    pause: '暂停',
-    resume: '继续',
-  },
-  voice: {
-    startListening: '语音输入',
-    stopListening: '停止录音',
-  },
-} as const;
-
 export const chatEnUS = {
   chat: {
     lecture: 'Lecture',
@@ -145,3 +71,76 @@ export const chatEnUS = {
     stopListening: 'Stop recording',
   },
 } as const;
+
+export const chatHiIN = {
+  chat: {
+    lecture: 'लेक्चर',
+    noConversations: 'कोई बातचीत नहीं',
+    startConversation: 'चैट शुरू करने के लिए नीचे संदेश टाइप करें',
+    noMessages: 'अभी तक कोई संदेश नहीं',
+    ended: 'समाप्त',
+    unknown: 'अज्ञात',
+    stopDiscussion: 'चर्चा रोकें',
+    endQA: 'प्रश्न-उत्तर समाप्त करें',
+    tabs: {
+      lecture: 'नोट्स',
+      chat: 'चैट',
+    },
+    lectureNotes: {
+      empty: 'लेक्चर प्लेबैक के बाद नोट्स यहां दिखाई देंगे',
+      emptyHint: 'लेक्चर शुरू करने के लिए प्ले दबाएं',
+      pageLabel: 'पेज {n}',
+      currentPage: 'वर्तमान',
+    },
+    badge: {
+      qa: 'Q&A',
+      discussion: 'चर्चा',
+      lecture: 'लेक्चर',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'स्पॉटलाइट',
+      laser: 'लेजर',
+      wb_open: 'व्हाइटबोर्ड खोलें',
+      wb_draw_text: 'व्हाइटबोर्ड टेक्स्ट',
+      wb_draw_shape: 'व्हाइटबोर्ड आकार',
+      wb_draw_chart: 'व्हाइटबोर्ड चार्ट',
+      wb_draw_latex: 'व्हाइटबोर्ड फॉर्मूला',
+      wb_draw_table: 'व्हाइटबोर्ड टेबल',
+      wb_draw_line: 'व्हाइटबोर्ड लाइन',
+      wb_clear: 'व्हाइटबोर्ड साफ़ करें',
+      wb_delete: 'तत्व हटाएं',
+      wb_close: 'व्हाइटबोर्ड बंद करें',
+      discussion: 'चर्चा',
+    },
+    status: {
+      inputStreaming: 'प्रतीक्षा कर रहा है',
+      inputAvailable: 'निष्पादित हो रहा है',
+      outputAvailable: 'पूरा हुआ',
+      outputError: 'त्रुटि',
+      outputDenied: 'अस्वीकृत',
+      running: 'निष्पादित हो रहा है',
+      result: 'पूरा हुआ',
+      error: 'त्रुटि',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'क्या आप साथ मिलकर सीखने के लिए तैयार हैं?',
+    expandedTitle: 'क्लासरूम रोल कॉन्फ़िगरेशन',
+    configTooltip: 'क्लासरूम रोल कॉन्फ़िगर करने के लिए क्लिक करें',
+  },
+  proactiveCard: {
+    discussion: 'चर्चा',
+    join: 'शामिल हों',
+    skip: 'छोड़ें',
+    pause: 'रोकें',
+    resume: 'जारी रखें',
+  },
+  voice: {
+    startListening: 'वोइस इनपुट',
+    stopListening: 'रिकॉर्डिंग रोकें',
+  },
+} as const;
+
+export const chatEnIN = chatEnUS;

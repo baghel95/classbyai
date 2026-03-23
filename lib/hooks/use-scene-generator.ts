@@ -4,7 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
-import { db } from '@/lib/utils/database';
+import { uploadToStorage, saveToFirestore, AUDIO_FILES_COLLECTION } from '@/lib/utils/firebase-storage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
@@ -124,6 +124,7 @@ async function fetchSceneActions(
 export async function generateAndStoreTTS(
   audioId: string,
   text: string,
+  userId: string,
   signal?: AbortSignal,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
@@ -162,17 +163,24 @@ export async function generateAndStoreTTS(
     bytes[i] = binary.charCodeAt(i);
   }
   const blob = new Blob([bytes], { type: `audio/${data.format}` });
-  await db.audioFiles.put({
-    id: audioId,
-    blob,
+  
+  // Upload to Firebase Storage
+  const storagePath = `audio/${audioId}.${data.format}`;
+  const downloadUrl = await uploadToStorage(storagePath, blob, userId);
+
+  // Save metadata to Firestore
+  await saveToFirestore(AUDIO_FILES_COLLECTION, audioId, {
+    url: downloadUrl,
     format: data.format,
+    text,
     createdAt: Date.now(),
-  });
+  }, userId);
 }
 
 /** Generate TTS for all speech actions in a scene. Returns result. */
 async function generateTTSForScene(
   scene: Scene,
+  userId: string,
   signal?: AbortSignal,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
@@ -189,7 +197,7 @@ async function generateTTSForScene(
     const audioId = `tts_${action.id}`;
     action.audioId = audioId;
     try {
-      await generateAndStoreTTS(audioId, action.text, signal);
+      await generateAndStoreTTS(audioId, action.text, userId, signal);
     } catch (error) {
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
@@ -256,9 +264,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const signal = fetchAbortRef.current.signal;
 
       const state = store.getState();
-      const { outlines, scenes, stage } = state;
+      const { outlines, scenes, stage, userId } = state;
       const startEpoch = state.generationEpoch;
-      if (!stage || outlines.length === 0) {
+      if (!stage || outlines.length === 0 || !userId) {
+        log.warn('Cannot generate: missing stage, outlines, or userId');
         generatingRef.current = false;
         return;
       }
@@ -283,7 +292,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       // Launch media generation in parallel — does not block content/action generation
       mediaAbortRef.current = new AbortController();
-      generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
+      generateMediaForOutlines(outlines, stage.id, userId, mediaAbortRef.current.signal).catch((err) => {
         log.warn('Media generation error:', err);
       });
 
@@ -363,7 +372,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
             // TTS generation — failure means the whole scene fails
             if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-              const ttsResult = await generateTTSForScene(scene, signal);
+              const ttsResult = await generateTTSForScene(scene, userId, signal);
               if (!ttsResult.success) {
                 if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
                   pausedByFailureOrAbort = true;
@@ -439,7 +448,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const state = store.getState();
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
       const params = lastParamsRef.current;
-      if (!outline || !state.stage || !params) return;
+      const userId = state.userId;
+      if (!outline || !state.stage || !params || !userId) return;
 
       const removeGeneratingOutline = () => {
         const current = store.getState().generatingOutlines;
@@ -508,7 +518,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // Step 3: TTS
         const settings = useSettingsStore.getState();
         if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-          const ttsResult = await generateTTSForScene(actionsResult.scene, signal);
+          const ttsResult = await generateTTSForScene(actionsResult.scene, userId, signal);
           if (!ttsResult.success) {
             store.getState().addFailedOutline(outline);
             return;

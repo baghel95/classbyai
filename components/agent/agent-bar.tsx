@@ -543,7 +543,7 @@ export function AgentBar() {
   const avatarRow = (
     <div className="flex items-center gap-1.5 shrink-0">
       {teacherAgent && (
-        <div className="size-8 rounded-full overflow-hidden ring-2 ring-blue-400/40 dark:ring-blue-500/30 shrink-0">
+        <div className="size-9 rounded-full overflow-hidden ring-2 ring-blue-500/20 dark:ring-blue-500/30 shrink-0 shadow-sm transition-transform group-hover:scale-105">
           <img
             src={teacherAgent.avatar}
             alt={getAgentName(teacherAgent)}
@@ -556,7 +556,7 @@ export function AgentBar() {
         <>
           <div className="flex -space-x-2">
             {agents.find((a) => a.role === 'assistant') && (
-              <div className="size-6 rounded-full overflow-hidden ring-[1.5px] ring-background">
+              <div className="size-7 rounded-full overflow-hidden ring-2 ring-white/80 dark:ring-slate-900/80 shadow-sm">
                 <img
                   src={agents.find((a) => a.role === 'assistant')!.avatar}
                   alt=""
@@ -565,16 +565,18 @@ export function AgentBar() {
               </div>
             )}
           </div>
-          <Shuffle className="size-4 text-violet-400 dark:text-violet-500" />
+          <div className="size-7 rounded-full bg-violet-500/10 flex items-center justify-center">
+            <Shuffle className="size-3.5 text-violet-500 animate-pulse" />
+          </div>
         </>
       ) : (
         <>
           {nonTeacherSelected.length > 0 && (
-            <div className="flex -space-x-2">
+            <div className="flex -space-x-2.5">
               {nonTeacherSelected.slice(0, 4).map((agent) => (
                 <div
                   key={agent.id}
-                  className="size-6 rounded-full overflow-hidden ring-[1.5px] ring-background"
+                  className="size-7 rounded-full overflow-hidden ring-2 ring-white/80 dark:ring-slate-900/80 shadow-sm"
                 >
                   <img
                     src={agent.avatar}
@@ -584,8 +586,8 @@ export function AgentBar() {
                 </div>
               ))}
               {nonTeacherSelected.length > 4 && (
-                <div className="size-6 rounded-full bg-muted ring-[1.5px] ring-background flex items-center justify-center">
-                  <span className="text-[9px] font-bold text-muted-foreground">
+                <div className="size-7 rounded-full bg-slate-100 dark:bg-slate-800 ring-2 ring-white/80 dark:ring-slate-900/80 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-muted-foreground">
                     +{nonTeacherSelected.length - 4}
                   </span>
                 </div>
@@ -651,8 +653,8 @@ export function AgentBar() {
         <TooltipTrigger asChild>
           <button
             className={cn(
-              'group flex items-center gap-2 cursor-pointer rounded-full px-2.5 py-2 transition-all w-full',
-              'border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60',
+              'group flex items-center gap-3 cursor-pointer rounded-full px-4 py-2 transition-all duration-300 w-full',
+              'border border-white/40 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl hover:bg-white/90 dark:hover:bg-slate-800/90 shadow-sm hover:shadow-md active:scale-[0.98]',
             )}
             onClick={() => setOpen(!open)}
           >

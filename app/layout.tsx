@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { I18nProvider } from '@/lib/hooks/use-i18n';
 import { Toaster } from '@/components/ui/sonner';
 import { ServerProvidersInit } from '@/components/server-providers-init';
+import { OnboardingRedirect } from '@/components/onboarding/onboarding-redirect';
 
 const inter = localFont({
   src: '../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
@@ -17,10 +18,13 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'OpenMAIC',
+  title: 'Classby-AI',
   description:
     'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
 };
+
+import { AuthProvider } from '@/components/auth-provider';
+import { AuthSync } from '@/components/auth-sync';
 
 export default function RootLayout({
   children,
@@ -33,13 +37,18 @@ export default function RootLayout({
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <ThemeProvider>
-          <I18nProvider>
-            <ServerProvidersInit />
-            {children}
-            <Toaster position="top-center" />
-          </I18nProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <AuthSync />
+          <ThemeProvider>
+            <I18nProvider>
+              <ServerProvidersInit />
+              <OnboardingRedirect>
+                {children}
+              </OnboardingRedirect>
+              <Toaster position="top-center" />
+            </I18nProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );

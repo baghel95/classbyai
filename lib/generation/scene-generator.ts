@@ -72,7 +72,7 @@ export async function generateFullScenes(
     currentStage: 3,
     overallProgress: 66,
     stageProgress: 0,
-    statusMessage: `正在并行生成 ${totalScenes} 个场景...`,
+    statusMessage: `Generating ${totalScenes} scenes in parallel...`,
     scenesGenerated: 0,
     totalScenes,
   });
@@ -81,7 +81,7 @@ export async function generateFullScenes(
   const results = await Promise.all(
     sceneOutlines.map(async (outline, index) => {
       try {
-        const sceneId = await generateSingleScene(outline, api, aiCall);
+        const sceneId = await generateSingleScene(outline, api, aiCall, sceneOutlines);
 
         // Update progress (not atomic, but sufficient for UI display)
         completedCount++;
@@ -89,7 +89,7 @@ export async function generateFullScenes(
           currentStage: 3,
           overallProgress: 66 + Math.floor((completedCount / totalScenes) * 34),
           stageProgress: Math.floor((completedCount / totalScenes) * 100),
-          statusMessage: `已完成 ${completedCount}/${totalScenes} 个场景`,
+          statusMessage: `Completed ${completedCount}/${totalScenes} scenes`,
           scenesGenerated: completedCount,
           totalScenes,
         });
@@ -125,7 +125,16 @@ async function generateSingleScene(
   outline: SceneOutline,
   api: ReturnType<typeof createStageAPI>,
   aiCall: AICallFn,
+  allOutlines?: SceneOutline[],
 ): Promise<string | null> {
+  const ctx: SceneGenerationContext = {
+    pageIndex: outline.order,
+    totalPages: allOutlines?.length || 0,
+    allTitles: allOutlines?.map((o) => o.title) || [],
+    previousSpeeches: [], // Implementation for transitions can be added here if needed
+    language: outline.language,
+  };
+
   // Step 3.1: Generate content
   log.info(`Step 3.1: Generating content for: ${outline.title}`);
   const content = await generateSceneContent(outline, aiCall);
@@ -136,7 +145,7 @@ async function generateSingleScene(
 
   // Step 3.2: Generate Actions
   log.info(`Step 3.2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall);
+  const actions = await generateSceneActions(outline, content, aiCall, ctx);
   log.info(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Create complete Scene
@@ -735,7 +744,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: 'zh-CN' | 'en-US' | 'hi-IN' | 'en-IN' = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 

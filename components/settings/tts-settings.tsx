@@ -155,7 +155,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             let endpointPath = '';
             switch (selectedProviderId) {
               case 'openai-tts':
-              case 'glm-tts':
                 endpointPath = '/audio/speech';
                 break;
               case 'azure-tts':
@@ -164,7 +163,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
                 break;
-              case 'elevenlabs-tts':
+              case 'sarvam-tts':
                 endpointPath = '/text-to-speech';
                 break;
             }

@@ -4,6 +4,7 @@ import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
+import { saveStageOutlines, loadStageOutlines } from '@/lib/utils/stage-storage';
 
 const log = createLogger('StageStore');
 
@@ -39,6 +40,7 @@ type ToolbarState = 'design' | 'ai';
 interface StageState {
   // Stage info
   stage: Stage | null;
+  userId: string | null;
 
   // Scenes
   scenes: Scene[];
@@ -66,6 +68,7 @@ interface StageState {
   failedOutlines: SceneOutline[];
 
   // Actions
+  setUserId: (userId: string | null) => void;
   setStage: (stage: Stage) => void;
   setScenes: (scenes: Scene[]) => void;
   addScene: (scene: Scene) => void;
@@ -98,6 +101,7 @@ interface StageState {
 const useStageStoreBase = create<StageState>()((set, get) => ({
   // Initial state
   stage: null,
+  userId: null,
   scenes: [],
   currentSceneId: null,
   chats: [],
@@ -110,7 +114,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   currentGeneratingOrder: -1,
   failedOutlines: [],
 
-  // Actions
+  setUserId: (userId) => set({ userId }),
+
   setStage: (stage) => {
     set((s) => ({
       stage,
@@ -197,17 +202,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setOutlines: (outlines) => {
     set({ outlines });
-    // Persist outlines to IndexedDB
-    const stageId = get().stage?.id;
-    if (stageId) {
-      import('@/lib/utils/database').then(({ db }) => {
-        db.stageOutlines.put({
-          stageId,
-          outlines,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        });
-      });
+    // Persist outlines to Firestore
+    const { stage, userId } = get();
+    if (stage?.id && userId) {
+      saveStageOutlines(stage.id, outlines, userId).catch((err) =>
+        log.error('Failed to save outlines to Firestore:', err),
+      );
     }
   },
 
@@ -248,9 +248,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   // Storage methods
   saveToStorage: async () => {
-    const { stage, scenes, currentSceneId, chats } = get();
-    if (!stage?.id) {
-      log.warn('Cannot save: stage.id is required');
+    const { stage, scenes, currentSceneId, chats, userId } = get();
+    if (!stage?.id || !userId) {
+      log.warn('Cannot save: stage.id and userId are required');
       return;
     }
 
@@ -261,7 +261,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         scenes,
         currentSceneId,
         chats,
-      });
+      }, userId);
     } catch (error) {
       log.error('Failed to save to storage:', error);
     }
@@ -269,21 +269,18 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   loadFromStorage: async (stageId: string) => {
     try {
-      // Skip IndexedDB load if the store already has this stage with scenes
-      // (e.g. navigated from generation-preview with fresh in-memory data)
+      // Skip IndexedDB/Firestore load if the store already has this stage with scenes
       const currentState = get();
       if (currentState.stage?.id === stageId && currentState.scenes.length > 0) {
-        log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
+        log.info('Stage already loaded in memory, skipping storage load:', stageId);
         return;
       }
 
-      const { loadStageData } = await import('@/lib/utils/stage-storage');
+      const { loadStageData, loadStageOutlines } = await import('@/lib/utils/stage-storage');
       const data = await loadStageData(stageId);
 
       // Load outlines for resume-on-refresh
-      const { db } = await import('@/lib/utils/database');
-      const outlinesRecord = await db.stageOutlines.get(stageId);
-      const outlines = outlinesRecord?.outlines || [];
+      const outlines = (await loadStageOutlines(stageId)) || [];
 
       if (data) {
         set({
@@ -292,6 +289,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           currentSceneId: data.currentSceneId,
           chats: data.chats,
           outlines,
+          // Sync userId from loaded stage if not already set
+          userId: get().userId || data.stage.userId || null,
           // Compute generatingOutlines from persisted outlines minus completed scenes
           generatingOutlines: outlines.filter((o) => !data.scenes.some((s) => s.order === o.order)),
         });
@@ -308,6 +307,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   clearStore: () => {
     set((s) => ({
       stage: null,
+      userId: null,
       scenes: [],
       currentSceneId: null,
       chats: [],

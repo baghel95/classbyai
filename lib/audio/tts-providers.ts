@@ -125,19 +125,16 @@ export async function generateTTS(
     case 'azure-tts':
       return await generateAzureTTS(config, text);
 
-    case 'glm-tts':
-      return await generateGLMTTS(config, text);
-
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
-
-    case 'elevenlabs-tts':
-      return await generateElevenLabsTTS(config, text);
 
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
       );
+
+    case 'sarvam-tts':
+      return await generateSarvamTTS(config, text);
 
     default:
       throw new Error(`Unsupported TTS provider: ${config.providerId}`);
@@ -224,7 +221,7 @@ async function generateAzureTTS(
  * GLM TTS implementation (GLM API)
  */
 async function generateGLMTTS(config: TTSModelConfig, text: string): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['glm-tts'].defaultBaseUrl;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['sarvam-tts'].defaultBaseUrl;
 
   const response = await fetch(`${baseUrl}/audio/speech`, {
     method: 'POST',
@@ -321,54 +318,44 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
 }
 
 /**
- * ElevenLabs TTS implementation (direct API call with voice-specific endpoint)
+ * Sarvam AI TTS implementation (Bulbul v3)
  */
-async function generateElevenLabsTTS(
+async function generateSarvamTTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['elevenlabs-tts'].defaultBaseUrl;
-  const requestedFormat = config.format || 'mp3';
-  const clampedSpeed = Math.min(1.2, Math.max(0.7, config.speed || 1.0));
-  const outputFormatMap: Record<string, string> = {
-    mp3: 'mp3_44100_128',
-    opus: 'opus_48000_96',
-    pcm: 'pcm_44100',
-    wav: 'wav_44100',
-    ulaw: 'ulaw_8000',
-    alaw: 'alaw_8000',
-  };
-  const outputFormat = outputFormatMap[requestedFormat] || outputFormatMap.mp3;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['sarvam-tts'].defaultBaseUrl;
 
-  const response = await fetch(
-    `${baseUrl}/text-to-speech/${encodeURIComponent(config.voice)}?output_format=${outputFormat}`,
-    {
-      method: 'POST',
-      headers: {
-        'xi-api-key': config.apiKey!,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-          speed: clampedSpeed,
-        },
-      }),
+  const response = await fetch(`${baseUrl}/text-to-speech`, {
+    method: 'POST',
+    headers: {
+      'api-subscription-key': config.apiKey!,
+      'Content-Type': 'application/json; charset=utf-8',
     },
-  );
+    body: JSON.stringify({
+      text,
+      target_language_code: config.voice, // We use language codes as voice IDs for Sarvam
+      speaker: 'shubh', // Default speaker, can be made configurable later
+      model: 'bulbul:v3', // Using bulbul:v1 as per common API usage, can be bulbul:v2 or v3
+    }),
+  });
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(`ElevenLabs TTS API error: ${errorText || response.statusText}`);
+    throw new Error(`Sarvam AI TTS API error: ${errorText}`);
   }
 
-  const arrayBuffer = await response.arrayBuffer();
+  const data = await response.json();
+  if (!data.audios) {
+    throw new Error('Sarvam AI TTS error: No audio_content in response');
+  }
+
+  // Sarvam returns base64 encoded audio
+  const audioBuffer = Buffer.from(data.audios[0], 'base64');
+
   return {
-    audio: new Uint8Array(arrayBuffer),
-    format: requestedFormat,
+    audio: new Uint8Array(audioBuffer),
+    format: 'wav',
   };
 }
 

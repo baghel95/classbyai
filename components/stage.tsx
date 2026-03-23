@@ -45,7 +45,7 @@ export function Stage({
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
+  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines, userId } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
@@ -293,10 +293,10 @@ export function Stage({
     }
 
     // Create ActionEngine for playback (with audioPlayer for TTS)
-    const actionEngine = new ActionEngine(useStageStore, audioPlayerRef.current);
+    const actionEngine = new ActionEngine(useStageStore, audioPlayerRef.current, userId || '');
 
     // Create new PlaybackEngine
-    const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {
+    const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, userId || '', {
       onModeChange: (mode) => {
         setEngineMode(mode);
       },

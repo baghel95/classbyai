@@ -289,8 +289,10 @@ export async function generatePBLContent(
       system: systemPrompt,
       prompt:
         language === 'zh-CN'
-          ? `请设计一个PBL项目。现在从 project_info 模式开始，先设置项目标题和描述。`
-          : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
+          ? `请设计一个PBL项目。现在从 project_info 模式开始，先设置项目标题 and 描述。`
+          : language === 'hi-IN'
+            ? `कृपया एक PBL प्रोजेक्ट डिज़ाइन करें। अभी project_info मोड से शुरू करें और प्रोजेक्ट का शीर्षक और विवरण सेट करें।`
+            : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
       tools: pblTools,
       stopWhen: stepCountIs(30),
       onStepFinish: ({ toolCalls, text }) => {
@@ -372,14 +374,32 @@ ${firstIssue.notes ? `**备注**: ${firstIssue.notes}` : ''}
 
 ## 你的任务
 
-根据以上任务信息，生成1-3个具体、可操作的引导问题，帮助学生理解和完成这个任务。每个问题应：
+根据以上任务信息，生成1-3个具体、可操作的引导问题，帮助学生理解和完成这个任务। 每个问题应：
 - 引导学生达成关键学习目标
 - 具体且可操作
 - 帮助分解问题
 - 鼓励批判性思考
 
-请以编号列表格式回答。`
-        : `## Issue Information
+请以编号列表格式回答।`
+        : language === 'hi-IN'
+          ? `## कार्य की जानकारी
+
+**शीर्षक**: ${firstIssue.title}
+**विवरण**: ${firstIssue.description}
+**प्रभारी व्यक्ति**: ${firstIssue.person_in_charge}
+${firstIssue.participants.length > 0 ? `**प्रतिभागी**: ${firstIssue.participants.join(', ')}` : ''}
+${firstIssue.notes ? `**नोट्स**: ${firstIssue.notes}` : ''}
+
+## आपका कार्य
+
+ऊपर दी गई कार्य जानकारी के आधार पर, 1-3 विशिष्ट, कार्रवाई योग्य प्रश्न उत्पन्न करें जो छात्रों को इस कार्य को समझने और पूरा करने में मदद करेंगे। प्रत्येक प्रश्न को:
+- छात्रों को मुख्य सीखने के उद्देश्यों की ओर निर्देशित करना चाहिए
+- विशिष्ट और कार्रवाई योग्य होना चाहिए
+- समस्या को सुलझाने में मदद करनी चाहिए
+- आलोचनात्मक सोच को प्रोत्साहित करना चाहिए
+
+कृपया क्रमांकित सूची प्रारूप में उत्तर दें।`
+          : `## Issue Information
 
 **Title**: ${firstIssue.title}
 **Description**: ${firstIssue.description}
@@ -413,7 +433,9 @@ Format your response as a numbered list.`;
     const welcomeMessage =
       language === 'zh-CN'
         ? `你好！我是这个任务的提问助手："${firstIssue.title}"\n\n为了引导你的学习，我准备了一些问题：\n\n${generatedQuestions}\n\n随时 @question 我来获取帮助或澄清！`
-        : `Hello! I'm your Question Agent for this issue: "${firstIssue.title}"\n\nTo help guide your work, I've prepared some questions for you:\n\n${generatedQuestions}\n\nFeel free to @question me anytime if you need help or clarification!`;
+        : language === 'hi-IN'
+          ? `नमस्ते! मैं इस कार्य के लिए आपका प्रश्न सहायक हूँ: "${firstIssue.title}"\n\nआपके काम का मार्गदर्शन करने के लिए, मैंने कुछ प्रश्न तैयार किए हैं:\n\n${generatedQuestions}\n\nयदि आपको सहायता या स्पष्टीकरण की आवश्यकता हो तो बेझिझक @question का उपयोग करें!`
+          : `Hello! I'm your Question Agent for this issue: "${firstIssue.title}"\n\nTo help guide your work, I've prepared some questions for you:\n\n${generatedQuestions}\n\nFeel free to @question me anytime if you need help or clarification!`;
 
     config.chat.messages.push({
       id: `msg_welcome_${Date.now()}`,

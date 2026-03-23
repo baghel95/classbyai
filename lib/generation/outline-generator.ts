@@ -17,6 +17,7 @@ import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
 import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
+import { useOnboardingStore } from '@/lib/store/onboarding';
 const log = createLogger('Generation');
 
 /**
@@ -39,8 +40,7 @@ export async function generateSceneOutlinesFromRequirements(
   },
 ): Promise<GenerationResult<SceneOutline[]>> {
   // Build available images description for the prompt
-  let availableImagesText =
-    requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+  let availableImagesText = 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
@@ -73,11 +73,26 @@ export async function generateSceneOutlinesFromRequirements(
     }
   }
 
-  // Build user profile string for prompt injection
-  const userProfileText =
-    requirements.userNickname || requirements.userBio
-      ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
-      : '';
+  // Build student profile string for prompt injection
+  const { school, student } = useOnboardingStore.getState();
+  const studentProfileText = `
+## Learner Context
+- Student: ${requirements.userNickname || student.grade || 'Unknown'}
+- Age: ${student.age}
+- Grade: ${student.grade}
+- Interests: ${student.interests.join(', ')}
+- Learning Goals: ${student.goals}
+- Preferred Language: ${student.language}
+- Learning Style: ${student.learningStyle}
+
+## School Context
+- Name: ${school.name}
+- Location: ${school.location}
+- Curriculum: ${school.curriculum}
+- Grade Levels: ${school.gradeRange}
+
+Consider this background when designing the course. Adapt difficulty, examples, terminology, and teaching approach accordingly. Use the student's preferred language for core teaching content.
+---`;
 
   // Build media generation policy based on enabled flags
   const imageEnabled = options?.imageGenerationEnabled ?? false;
@@ -101,11 +116,9 @@ export async function generateSceneOutlinesFromRequirements(
     language: requirements.language,
     pdfContent: pdfText
       ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-      : requirements.language === 'zh-CN'
-        ? '无'
-        : 'None',
+      : 'None',
     availableImages: availableImagesText,
-    userProfile: userProfileText,
+    userProfile: studentProfileText,
     mediaGenerationPolicy,
     researchContext:
       options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),

@@ -1,70 +1,3 @@
-export const generationZhCN = {
-  classroom: {
-    recentClassrooms: '最近学习',
-    today: '今天',
-    yesterday: '昨天',
-    daysAgo: '天前',
-    slides: '页',
-    nameCopied: '课堂名称已复制',
-    deleteConfirmTitle: '删除课堂',
-    delete: '删除',
-  },
-  upload: {
-    pdfSizeLimit: '支持最大50MB的PDF文件',
-    generateFailed: '生成课堂失败，请重试',
-    requirementPlaceholder:
-      '输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」',
-    requirementRequired: '请输入课程需求',
-    fileTooLarge: '文件过大，请选择小于50MB的PDF文件',
-  },
-  generation: {
-    // Progress steps (used dynamically via activeStep)
-    analyzingPdf: '解析 PDF 文档',
-    analyzingPdfDesc: '正在提取文档结构和内容...',
-    pdfLoadFailed: '无法加载 PDF 文件，请重试',
-    pdfParseFailed: 'PDF 解析失败',
-    streamNotReadable: '无法读取生成数据流',
-    generatingOutlines: '生成课程大纲',
-    generatingOutlinesDesc: '正在构建学习路径...',
-    generatingSlideContent: '生成页面内容',
-    generatingSlideContentDesc: '正在创建幻灯片、测验和互动内容...',
-    generatingActions: '生成教学动作',
-    generatingActionsDesc: '正在编排讲解、聚焦和互动流程...',
-    generationComplete: '生成完成！',
-    generationFailed: '生成失败',
-    generatingCourse: '正在生成课程',
-    openingClassroom: '即将打开课堂...',
-    outlineReady: '课程大纲已生成',
-    generatingFirstPage: '首页内容生成中...',
-    firstPageReady: '首页已就绪！正在打开课堂...',
-    speechFailed: '语音合成失败',
-    retryScene: '重试生成',
-    retryingScene: '正在重新生成...',
-    backToHome: '返回首页',
-    sessionNotFound: '未找到生成会话',
-    sessionNotFoundDesc: '请先填写课程需求开始生成流程。',
-    goBackAndRetry: '返回重试',
-    classroomReady: '你的个性化AI学习环境已成功生成。',
-    aiWorking: 'AI智能体工作中...',
-    textTruncated: '文档文本较长，已截取前 {n} 字符用于生成',
-    imageTruncated: '文档含 {total} 张图片，超出上限 {max} 张，多余图片将仅以文字描述传递',
-    // Agent generation
-    agentGeneration: '生成课堂角色',
-    agentGenerationDesc: '正在根据课程内容生成角色...',
-    agentRevealTitle: '你的课堂角色',
-    viewAgents: '查看角色',
-    continue: '继续',
-    // Outline errors
-    outlineRetrying: '大纲生成异常，正在重试...',
-    outlineEmptyResponse: '模型未返回有效的大纲内容，请检查模型配置后重试',
-    outlineGenerateFailed: '大纲生成失败，请稍后重试',
-    // Web Search
-    webSearching: '网络搜索',
-    webSearchingDesc: '正在搜索网络获取最新资料',
-    webSearchFailed: '网络搜索失败',
-  },
-} as const;
-
 export const generationEnUS = {
   classroom: {
     recentClassrooms: 'Recent',
@@ -133,3 +66,71 @@ export const generationEnUS = {
     webSearchFailed: 'Web search failed',
   },
 } as const;
+
+export const generationHiIN = {
+  classroom: {
+    recentClassrooms: 'हालिया',
+    today: 'आज',
+    yesterday: 'कल',
+    daysAgo: 'दिन पहले',
+    slides: 'स्लाइड्स',
+    nameCopied: 'नाम कॉपी किया गया',
+    deleteConfirmTitle: 'हटाएं',
+    delete: 'हटाएं',
+  },
+  upload: {
+    pdfSizeLimit: '50MB तक की PDF फ़ाइलों का समर्थन करता है',
+    generateFailed: 'क्लासरूम जनरेट करने में विफल, कृपया पुनः प्रयास करें',
+    requirementPlaceholder:
+      'मुझे बताएं कि आप क्या सीखना चाहते हैं, उदाहरण के लिए\n"मुझे 30 मिनट में शुरू से पायथन सिखाएं"\n"व्हाइटबोर्ड पर फूरियर ट्रांसफॉर्म समझाएं"\n"बोर्ड गेम एवलॉन कैसे खेलें"',
+    requirementRequired: 'कृपया कोर्स की आवश्यकताएं दर्ज करें',
+    fileTooLarge: 'फ़ाइल बहुत बड़ी है। कृपया 50MB से छोटी PDF फ़ाइल चुनें',
+  },
+  generation: {
+    // Progress steps (used dynamically via activeStep)
+    analyzingPdf: 'PDF दस्तावेज़ का विश्लेषण',
+    analyzingPdfDesc: 'दस्तावेज़ की संरचना और सामग्री निकाली जा रही है...',
+    generatingOutlines: 'कोर्स की रूपरेखा तैयार की जा रही है',
+    generatingOutlinesDesc: 'सीखने के पथ की संरचना की जा रही है...',
+    generatingSlideContent: 'पेज कंटेंट जनरेट किया जा रहा है',
+    generatingSlideContentDesc: 'स्लाइड्स, क्विज़ और इंटरैक्टिव कंटेंट बनाया जा रहा है...',
+    generatingActions: 'शिक्षण क्रियाएं जनरेट की जा रही हैं',
+    generatingActionsDesc: 'कथानक, स्पॉटलाइट और इंटरेक्शन का समन्वय किया जा रहा है...',
+    generationComplete: 'जनरेशन पूरा हुआ!',
+    generationFailed: 'जनरेशन विफल रहा',
+    generatingCourse: 'कोर्स जनरेट किया जा रहा है',
+    openingClassroom: 'क्लासरूम खुल रहा है...',
+    outlineReady: 'कोर्स की रूपरेखा जनरेट हो गई',
+    generatingFirstPage: 'पहला पेज जनरेट किया जा रहा है...',
+    firstPageReady: 'पहला पेज तैयार है! क्लासरूम खुल रहा है...',
+    speechFailed: 'स्पीच जनरेशन विफल रहा',
+    retryScene: 'पुनः प्रयास करें',
+    retryingScene: 'पुनः जनरेट किया जा रहा है...',
+    backToHome: 'होम पर वापस जाएं',
+    sessionNotFound: 'सत्र नहीं मिला',
+    sessionNotFoundDesc: 'जनरेशन प्रक्रिया शुरू करने के लिए कृपया कोर्स की आवश्यकताएं भरें।',
+    goBackAndRetry: 'वापस जाएं और पुनः प्रयास करें',
+    classroomReady: 'आपका व्यक्तिगत AI लर्निंग वातावरण सफलतापूर्वक जनरेट हो गया है।',
+    aiWorking: 'AI एजेंट काम कर रहे हैं...',
+    textTruncated: 'दस्तावेज़ का टेक्स्ट लंबा है, जनरेशन के लिए पहले {n} अक्षरों का उपयोग किया जा रहा है',
+    imageTruncated:
+      '{total} चित्र मिले, जो {max} चित्र सीमा से अधिक हैं। अतिरिक्त चित्रों के लिए केवल टेक्स्ट विवरण का उपयोग किया जाएगा',
+    // Agent generation
+    agentGeneration: 'क्लासरूम रोल जनरेट किए जा रहे हैं',
+    agentGenerationDesc: 'कोर्स कंटेंट के आधार पर रोल जनरेट किए जा रहे हैं...',
+    agentRevealTitle: 'आपके क्लासरूम रोल',
+    viewAgents: 'रोल देखें',
+    continue: 'जारी रखें',
+    // Outline errors
+    outlineRetrying: 'रूपरेखा जनरेशन में समस्या, पुनः प्रयास किया जा रहा है...',
+    outlineEmptyResponse:
+      'मॉडल ने कोई मान्य रूपरेखा नहीं लौटाई। कृपया मॉडल कॉन्फ़िगरेशन जांचें और पुनः प्रयास करें',
+    outlineGenerateFailed: 'रूपरेखा जनरेशन विफल रहा, कृपया बाद में पुनः प्रयास करें',
+    // Web Search
+    webSearching: 'वेब खोज',
+    webSearchingDesc: 'ताज़ा जानकारी के लिए वेब पर खोज की जा रही है',
+    webSearchFailed: 'वेब खोज विफल रही',
+  },
+} as const;
+
+export const generationEnIN = generationEnUS;

@@ -1,44 +1,3 @@
-export const commonZhCN = {
-  common: {
-    you: '你',
-    confirm: '确定',
-    cancel: '取消',
-    loading: '加载中...',
-  },
-  home: {
-    slogan: 'Generative Learning in Multi-Agent Interactive Classroom',
-    greeting: '嗨，',
-  },
-  toolbar: {
-    languageHint: '课程将以此语言生成',
-    pdfParser: '解析器',
-    pdfUpload: '上传 PDF',
-    removePdf: '移除文件',
-    webSearchOn: '已开启',
-    webSearchOff: '点击开启',
-    webSearchDesc: '生成前搜索网络获取最新资料，让内容更丰富准确',
-    webSearchProvider: '搜索引擎',
-    webSearchNoProvider: '请在设置中配置搜索引擎 API Key',
-    selectProvider: '选择模型服务商',
-    configureProvider: '配置模型',
-    configureProviderHint: '请先配置至少一个模型服务商才能生成课程',
-    enterClassroom: '进入课堂',
-    advancedSettings: '高级设置',
-    ttsTitle: '语音合成',
-    ttsHint: '选择 AI 教师的朗读音色',
-    ttsPreview: '试听',
-    ttsPreviewing: '播放中...',
-  },
-  export: {
-    pptx: '导出 PPTX',
-    resourcePack: '导出教学资源包',
-    resourcePackDesc: 'PPTX + 交互式页面',
-    exporting: '正在导出...',
-    exportSuccess: '导出成功',
-    exportFailed: '导出失败',
-  },
-} as const;
-
 export const commonEnUS = {
   common: {
     you: 'You',
@@ -63,6 +22,9 @@ export const commonEnUS = {
     selectProvider: 'Select provider',
     configureProvider: 'Set up model',
     configureProviderHint: 'Configure at least one model provider to generate courses',
+    providerBrowserNativeASR: 'Browser Native ASR',
+    providerSarvamTTS: 'Sarvam AI (Bulbul)',
+    providerSarvamASR: 'Sarvam AI (Saaras)',
     enterClassroom: 'Enter Classroom',
     advancedSettings: 'Advanced Settings',
     ttsTitle: 'Text-to-Speech',
@@ -79,3 +41,49 @@ export const commonEnUS = {
     exportFailed: 'Export failed',
   },
 } as const;
+
+export const commonHiIN = {
+  common: {
+    you: 'आप',
+    confirm: 'पुष्टि करें',
+    cancel: 'रद्द करें',
+    loading: 'लोड हो रहा है...',
+  },
+  home: {
+    slogan: 'मल्टी-एजेंट इंटरैक्टिव क्लासरूम में जनरेटिव लर्निंग',
+    greeting: 'नमस्ते, ',
+  },
+  toolbar: {
+    languageHint: 'कोर्स इस भाषा में जनरेट किया जाएगा',
+    pdfParser: 'पार्सर',
+    pdfUpload: 'PDF अपलोड करें',
+    removePdf: 'फ़ाइल निकालें',
+    providerBrowserNativeASR: 'ब्राउज़र नेटिव ASR (इंडिया)',
+    providerSarvamTTS: 'Sarvam AI (Bulbul)',
+    providerSarvamASR: 'Sarvam AI (Saaras)',
+    webSearchOn: 'सक्षम',
+    webSearchOff: 'सक्षम करने के लिए क्लिक करें',
+    webSearchDesc: 'जनरेशन से पहले ताज़ा जानकारी के लिए वेब खोजें',
+    webSearchProvider: 'सर्च इंजन',
+    webSearchNoProvider: 'सेटिंग्स में सर्च API की कॉन्फ़िगर करें',
+    selectProvider: 'प्रदाता चुनें',
+    configureProvider: 'मॉडल सेटअप करें',
+    configureProviderHint: 'कोर्स जनरेट करने के लिए कम से कम एक मॉडल प्रदाता कॉन्फ़िगर करें',
+    enterClassroom: 'क्लासरूम में प्रवेश करें',
+    advancedSettings: 'उन्नत सेटिंग्स',
+    ttsTitle: 'टेक्स्ट-टू-स्पीच',
+    ttsHint: 'AI शिक्षक के लिए एक आवाज़ चुनें',
+    ttsPreview: 'पूर्वावलोकन',
+    ttsPreviewing: 'चल रहा है...',
+  },
+  export: {
+    pptx: 'PPTX एक्सपोर्ट करें',
+    resourcePack: 'रिसोर्स पैक एक्सपोर्ट करें',
+    resourcePackDesc: 'PPTX + इंटरैक्टिव पेज',
+    exporting: 'एक्सपोर्ट हो रहा है...',
+    exportSuccess: 'एक्सपोर्ट सफल रहा',
+    exportFailed: 'एक्सपोर्ट विफल रहा',
+  },
+} as const;
+
+export const commonEnIN = commonEnUS;

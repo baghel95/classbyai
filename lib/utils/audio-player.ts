@@ -6,7 +6,7 @@
  *
  */
 
-import { db } from '@/lib/utils/database';
+import { loadFromFirestore, AUDIO_FILES_COLLECTION } from '@/lib/utils/firebase-storage';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioPlayer');
@@ -22,12 +22,13 @@ export class AudioPlayer {
   private playbackRate: number = 1;
 
   /**
-   * Play audio (from URL or IndexedDB pre-generated cache)
+   * Play audio (from URL or Firebase Storage)
    * @param audioId Audio ID
-   * @param audioUrl Optional server-generated audio URL (takes priority over IndexedDB)
-   * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
+   * @param userId User ID
+   * @param audioUrl Optional server-generated audio URL (takes priority)
+   * @returns true if audio started playing, false if no audio
    */
-  public async play(audioId: string, audioUrl?: string): Promise<boolean> {
+  public async play(audioId: string, userId: string, audioUrl?: string): Promise<boolean> {
     try {
       // 1. Try audioUrl first (server-generated TTS)
       if (audioUrl) {
@@ -46,10 +47,10 @@ export class AudioPlayer {
         return true;
       }
 
-      // 2. Fall back to IndexedDB (client-generated TTS)
-      const audioRecord = await db.audioFiles.get(audioId);
+      // 2. Fall back to Firebase Firestore/Storage (client-generated TTS)
+      const audioRecord = await loadFromFirestore<any>(AUDIO_FILES_COLLECTION, audioId);
 
-      if (!audioRecord) {
+      if (!audioRecord || !audioRecord.url) {
         // Pre-generated audio does not exist (generation failed), skip silently
         return false;
       }
@@ -60,9 +61,8 @@ export class AudioPlayer {
       // Create audio element
       this.audio = new Audio();
 
-      // Set audio source
-      const blobUrl = URL.createObjectURL(audioRecord.blob);
-      this.audio.src = blobUrl;
+      // Set audio source (use the stored URL)
+      this.audio.src = audioRecord.url;
       if (this.muted) this.audio.volume = 0;
       else this.audio.volume = this.volume;
 
@@ -72,7 +72,6 @@ export class AudioPlayer {
 
       // Set ended callback
       this.audio.addEventListener('ended', () => {
-        URL.revokeObjectURL(blobUrl);
         this.onEndedCallback?.();
       });
 

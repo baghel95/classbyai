@@ -16,6 +16,7 @@ export interface Stage {
   id: string;
   name: string;
   description?: string;
+  userId?: string; // Owner of the stage
   createdAt: number;
   updatedAt: number;
   // Stage metadata

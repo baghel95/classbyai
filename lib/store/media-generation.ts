@@ -8,8 +8,8 @@
 
 import { create } from 'zustand';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import { db } from '@/lib/utils/database';
 import { createLogger } from '@/lib/logger';
+import { queryFromFirestore, MEDIA_FILES_COLLECTION } from '@/lib/utils/firebase-storage';
 
 const log = createLogger('MediaGenerationStore');
 
@@ -37,6 +37,9 @@ export interface MediaTask {
 
 interface MediaGenerationState {
   tasks: Record<string, MediaTask>;
+  userId: string | null;
+
+  setUserId: (userId: string | null) => void;
 
   // Batch enqueue
   enqueueTasks: (stageId: string, requests: MediaGenerationRequest[]) => void;
@@ -53,8 +56,8 @@ interface MediaGenerationState {
   getTask: (elementId: string) => MediaTask | undefined;
   isReady: (elementId: string) => boolean;
 
-  // Restore from IndexedDB on page load
-  restoreFromDB: (stageId: string) => Promise<void>;
+  // Restore from Firestore on page load
+  restoreFromDB: (stageId: string, userId: string) => Promise<void>;
 
   // Cleanup
   clearStage: (stageId: string) => void;
@@ -72,6 +75,9 @@ export function isMediaPlaceholder(src: string): boolean {
 
 export const useMediaGenerationStore = create<MediaGenerationState>()((set, get) => ({
   tasks: {},
+  userId: null,
+
+  setUserId: (userId) => set({ userId }),
 
   enqueueTasks: (stageId, requests) => {
     const newTasks: Record<string, MediaTask> = {};
@@ -157,9 +163,11 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
 
   isReady: (elementId) => get().tasks[elementId]?.status === 'done',
 
-  restoreFromDB: async (stageId) => {
+  restoreFromDB: async (stageId, userId) => {
     try {
-      const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
+      const allRecords = await queryFromFirestore<any>(MEDIA_FILES_COLLECTION, userId);
+      const records = allRecords.filter(r => r.stageId === stageId);
+      
       const restored: Record<string, MediaTask> = {};
       for (const rec of records) {
         // Extract elementId from compound key (stageId:elementId)
@@ -180,18 +188,15 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
             stageId,
           };
         } else {
-          // Re-wrap blob with stored mimeType — IndexedDB may drop Blob.type
-          const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
-          const objectUrl = URL.createObjectURL(blob);
-          const poster = rec.poster ? URL.createObjectURL(rec.poster) : undefined;
+          // Media is already stored as URLs in Firebase Storage
           restored[elementId] = {
             elementId,
             type: rec.type,
             status: 'done',
             prompt: rec.prompt,
             params,
-            objectUrl,
-            poster,
+            objectUrl: rec.url,
+            poster: rec.posterUrl,
             retryCount: 0,
             stageId,
           };
@@ -201,7 +206,7 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
         set((s) => ({ tasks: { ...s.tasks, ...restored } }));
       }
     } catch (err) {
-      log.error('Failed to restore from DB:', err);
+      log.error('Failed to restore from Firestore:', err);
     }
   },
 

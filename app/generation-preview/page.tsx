@@ -16,14 +16,17 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
   loadPdfBlob,
-  cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { db } from '@/lib/utils/database';
+import type { Stage } from '@/lib/types/stage';
+import { 
+  uploadToStorage, 
+  saveToFirestore, 
+  AUDIO_FILES_COLLECTION 
+} from '@/lib/utils/firebase-storage';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
-import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
@@ -35,6 +38,7 @@ const log = createLogger('GenerationPreview');
 function GenerationPreviewContent() {
   const router = useRouter();
   const { t } = useI18n();
+  const { userId } = useStageStore();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -68,14 +72,12 @@ function GenerationPreviewContent() {
 
   // Load session from sessionStorage
   useEffect(() => {
-    cleanupOldImages(24).catch((e) => log.error(e));
-
     const saved = sessionStorage.getItem('generationSession');
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as GenerationSessionState;
         setSession(parsed);
-      } catch (e) {
+      } catch (e: any) {
         log.error('Failed to parse generation session:', e);
       }
     }
@@ -240,7 +242,7 @@ function GenerationPreviewContent() {
               pageNumber: 1,
             }));
 
-        const imageStorageIds = await storeImages(images);
+        const imageStorageIds = await storeImages(images, userId || '');
 
         const pdfImages: PdfImage[] = images.map(
           (
@@ -459,9 +461,9 @@ function GenerationPreviewContent() {
           const agentData = await agentResp.json();
           if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
 
-          // Save to IndexedDB and registry
+          // Save to Firestore and registry
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-          const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
+          const savedIds = await saveGeneratedAgents(stage.id, userId || '', agentData.agents);
           settings.setSelectedAgentIds(savedIds);
 
           // Show card-reveal modal, continue generation once all cards are revealed
@@ -735,13 +737,20 @@ function GenerationPreviewContent() {
             const binary = atob(ttsData.base64);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const blob = new Blob([bytes], { type: `audio/${ttsData.format}` });
-            await db.audioFiles.put({
+            const audioBlob = new Blob([bytes], { type: `audio/${ttsData.format}` });
+            const storagePath = `audio/${userId || 'public'}/${audioId}.${ttsData.format}`;
+            
+            // Upload to Storage
+            const downloadUrl = await uploadToStorage(storagePath, audioBlob, userId || '');
+            
+            // Save metadata to Firestore
+            await saveToFirestore(AUDIO_FILES_COLLECTION, audioId, {
               id: audioId,
-              blob,
+              url: downloadUrl,
               format: ttsData.format,
+              text: action.text,
               createdAt: Date.now(),
-            });
+            }, userId || '');
           } catch (err) {
             log.warn(`[TTS] Failed for ${audioId}:`, err);
             ttsFailCount++;
@@ -801,7 +810,7 @@ function GenerationPreviewContent() {
   // Still loading session from sessionStorage
   if (!sessionLoaded) {
     return (
-      <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-dvh w-full bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
         <div className="text-center text-muted-foreground">
           <div className="size-8 border-2 border-current border-t-transparent rounded-full animate-spin mx-auto" />
         </div>
@@ -812,7 +821,7 @@ function GenerationPreviewContent() {
   // No session found
   if (!session) {
     return (
-      <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-dvh w-full bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
         <Card className="p-8 max-w-md w-full">
           <div className="text-center space-y-4">
             <AlertCircle className="size-12 text-muted-foreground mx-auto" />
@@ -834,7 +843,7 @@ function GenerationPreviewContent() {
       : ALL_STEPS[0];
 
   return (
-    <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden text-center">
+    <div className="min-h-dvh w-full bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden text-center">
       {/* Background Decor */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div
@@ -984,7 +993,7 @@ function GenerationPreviewContent() {
                               ease: 'easeInOut',
                             }}
                             className="relative size-7 rounded-full flex items-center justify-center cursor-default
-                                       bg-gradient-to-br from-amber-400/15 to-orange-400/10
+                                       bg-linear-to-br from-amber-400/15 to-orange-400/10
                                        border border-amber-400/25 hover:border-amber-400/40
                                        hover:from-amber-400/20 hover:to-orange-400/15
                                        transition-colors duration-300
@@ -1068,7 +1077,7 @@ export default function GenerationPreviewPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center">
+        <div className="min-h-dvh w-full bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center">
           <div className="animate-pulse space-y-4 text-center">
             <div className="h-8 w-48 bg-muted rounded mx-auto" />
             <div className="h-4 w-64 bg-muted rounded mx-auto" />

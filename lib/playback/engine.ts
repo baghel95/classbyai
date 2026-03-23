@@ -66,6 +66,7 @@ export class PlaybackEngine {
   private audioPlayer: AudioPlayer;
   private actionEngine: ActionEngine;
   private callbacks: PlaybackEngineCallbacks;
+  private userId: string;
 
   // Scene identity (for snapshot validation)
   private sceneId: string | undefined;
@@ -87,12 +88,14 @@ export class PlaybackEngine {
     scenes: Scene[],
     actionEngine: ActionEngine,
     audioPlayer: AudioPlayer,
+    userId: string,
     callbacks: PlaybackEngineCallbacks = {},
   ) {
     this.scenes = scenes;
     this.sceneId = scenes[0]?.id;
     this.actionEngine = actionEngine;
     this.audioPlayer = audioPlayer;
+    this.userId = userId;
     this.callbacks = callbacks;
   }
 
@@ -465,7 +468,7 @@ export class PlaybackEngine {
         };
 
         this.audioPlayer
-          .play(speechAction.audioId || '', speechAction.audioUrl)
+          .play(speechAction.audioId || '', this.userId, speechAction.audioUrl)
           .then((audioStarted) => {
             if (!audioStarted) {
               // No pre-generated audio — try browser-native TTS if selected

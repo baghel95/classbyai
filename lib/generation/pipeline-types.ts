@@ -22,6 +22,7 @@ export interface SceneGenerationContext {
   totalPages: number; // Total number of pages
   allTitles: string[]; // All page titles in order
   previousSpeeches: string[]; // Speech texts from the previous page only
+  language?: string; // e.g., 'hi-IN', 'en-IN', 'zh-CN', 'en-US'
 }
 
 // ==================== Generated Slide Data Interface ====================

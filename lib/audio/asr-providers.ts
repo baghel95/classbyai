@@ -184,6 +184,9 @@ export async function transcribeAudio(
     case 'qwen-asr':
       return await transcribeQwenASR(config, audioBuffer);
 
+    case 'sarvam-asr':
+      return await transcribeSarvamASR(config, audioBuffer);
+
     default:
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
@@ -324,6 +327,57 @@ async function transcribeQwenASR(
   // Extract text from first content item
   const transcribedText = messageContent[0]?.text || '';
   return { text: transcribedText };
+}
+
+/**
+ * Sarvam AI ASR implementation (Saaras v3)
+ */
+async function transcribeSarvamASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = config.baseUrl || ASR_PROVIDERS['sarvam-asr'].defaultBaseUrl;
+
+  const formData = new FormData();
+
+  // Convert audio to Blob if it's a Buffer
+  let blob: Blob;
+  if (audioBuffer instanceof Buffer) {
+    blob = new Blob(
+      [
+        audioBuffer.buffer.slice(
+          audioBuffer.byteOffset,
+          audioBuffer.byteOffset + audioBuffer.byteLength,
+        ) as ArrayBuffer,
+      ],
+      { type: 'audio/wav' },
+    );
+  } else {
+    blob = audioBuffer as Blob;
+  }
+
+  formData.append('file', blob, 'audio.wav');
+  if (config.language && config.language !== 'auto') {
+    formData.append('language_code', config.language);
+  }
+  formData.append('model', 'saarika:v2.5');
+
+  const response = await fetch(`${baseUrl}/speech-to-text`, {
+    method: 'POST',
+    headers: {
+      'api-subscription-key': config.apiKey!,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Sarvam AI ASR API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  return { text: data.transcript || '' };
 }
 
 /**

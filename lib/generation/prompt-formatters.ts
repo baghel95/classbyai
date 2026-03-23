@@ -46,6 +46,23 @@ export function buildCourseContext(ctx?: SceneGenerationContext): string {
     lines.push(`  "...${lastSpeech.slice(-150)}"`);
   }
 
+  // Indian Curriculum Context
+  if (ctx.language === 'hi-IN' || ctx.language === 'en-IN') {
+    lines.push('');
+    lines.push('Curriculum Context (India):');
+    lines.push(
+      '  - Base the content on NCERT/CBSE/ICSE guidelines where applicable.',
+    );
+    lines.push(
+      '  - Use examples relatable to Indian students (e.g., ISRO, Digital India, local sports, festivals).',
+    );
+    if (ctx.language === 'hi-IN') {
+      lines.push(
+        '  - Language: Use clear, academic Hindi (Shuddh Hindi) or natural Hinglish (Hindi mixed with English terms) as appropriate for the persona.',
+      );
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -82,9 +99,11 @@ export function formatImageDescription(img: PdfImage, language: string): string 
     dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
   }
   const desc = img.description ? ` | ${img.description}` : '';
-  return language === 'zh-CN'
-    ? `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`
-    : `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
+  if (language === 'hi-IN') {
+    return `- **${img.id}**: PDF पेज ${img.pageNumber} से${dimInfo}${desc}`;
+  } else {
+    return `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
+  }
 }
 
 /**
@@ -97,9 +116,13 @@ export function formatImagePlaceholder(img: PdfImage, language: string): string 
     const ratio = (img.width / img.height).toFixed(2);
     dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
   }
-  return language === 'zh-CN'
-    ? `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`
-    : `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
+  if (language === 'zh-CN') {
+    return `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`;
+  } else if (language === 'hi-IN') {
+    return `- **${img.id}**: PDF पेज ${img.pageNumber} से इमेज${dimInfo} [देखें]`;
+  } else {
+    return `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
+  }
 }
 
 /**
@@ -121,7 +144,7 @@ export function buildVisionUserContent(
       let dimInfo = '';
       if (img.width && img.height) {
         const ratio = (img.width / img.height).toFixed(2);
-        dimInfo = ` (${img.width}×${img.height}, 宽高比${ratio})`;
+        dimInfo = ` (${img.width}×${img.height}, Ratio ${ratio})`;
       }
       parts.push({ type: 'text', text: `\n**${img.id}**${dimInfo}:` });
       // Strip data URI prefix — AI SDK only accepts http(s) URLs or raw base64

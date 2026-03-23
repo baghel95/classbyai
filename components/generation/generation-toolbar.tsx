@@ -28,8 +28,8 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
-  language: 'zh-CN' | 'en-US';
-  onLanguageChange: (lang: 'zh-CN' | 'en-US') => void;
+  language: 'en-US' | 'hi-IN' | 'en-IN';
+  onLanguageChange: (lang: 'en-US' | 'hi-IN' | 'en-IN') => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
@@ -109,9 +109,9 @@ export function GenerationToolbar({
 
   // ─── Pill button helper ─────────────────────────────
   const pillCls =
-    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
-  const pillMuted = `${pillCls} border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60`;
-  const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300`;
+    'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-300 cursor-pointer select-none whitespace-nowrap border shadow-xs';
+  const pillMuted = `${pillCls} border-white/40 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/90 dark:hover:bg-slate-800/90`;
+  const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 shadow-violet-500/5`;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
@@ -145,7 +145,7 @@ export function GenerationToolbar({
       )}
 
       {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+      <div className="w-px h-5 bg-linear-to-b from-transparent via-slate-200 dark:via-slate-700 to-transparent mx-2 opacity-50" />
 
       {/* ── PDF (parser + upload) combined Popover ── */}
       <Popover>
@@ -361,18 +361,31 @@ export function GenerationToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
+            onClick={() => {
+              const locales: ('en-US' | 'en-IN' | 'hi-IN')[] = [
+                'en-US',
+                'en-IN',
+                'hi-IN',
+              ];
+              const currentIndex = locales.indexOf(language);
+              const nextIndex = (currentIndex + 1) % locales.length;
+              onLanguageChange(locales[nextIndex]);
+            }}
             className={pillMuted}
           >
             <Globe className="size-3.5" />
-            <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
+            <span>
+              {language === 'en-US' && 'EN'}
+              {language === 'en-IN' && 'IN-EN'}
+              {language === 'hi-IN' && 'हिन्दी'}
+            </span>
           </button>
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
       </Tooltip>
 
       {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+      <div className="w-px h-5 bg-linear-to-b from-transparent via-slate-200 dark:via-slate-700 to-transparent mx-2 opacity-50" />
 
       {/* ── Media popover ── */}
       <MediaPopover onSettingsOpen={onSettingsOpen} />
@@ -426,20 +439,20 @@ function ModelSelectorPopover({
           <PopoverTrigger asChild>
             <button
               className={cn(
-                'inline-flex items-center justify-center size-7 rounded-full transition-all cursor-pointer select-none',
-                'ring-1 ring-border/60 hover:ring-border hover:bg-muted/60',
+                'inline-flex items-center justify-center size-8 rounded-full transition-all duration-300 cursor-pointer select-none',
+                'border border-white/40 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 shadow-xs hover:bg-white/90 dark:hover:bg-slate-800/90',
                 currentModelId &&
-                  'ring-violet-300 dark:ring-violet-700 bg-violet-50 dark:bg-violet-950/20',
+                  'border-violet-200 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/20',
               )}
             >
               {currentProviderConfig?.icon ? (
                 <img
                   src={currentProviderConfig.icon}
                   alt={currentProviderConfig.name}
-                  className="size-4 rounded-sm"
+                  className="size-4.5 rounded-sm grayscale group-hover:grayscale-0 transition-all"
                 />
               ) : (
-                <Bot className="size-3.5 text-muted-foreground" />
+                <Bot className="size-4 text-slate-400 group-hover:text-violet-500 transition-colors" />
               )}
             </button>
           </PopoverTrigger>
