@@ -8,11 +8,11 @@
 import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { 
-  saveToFirestore, 
-  loadFromFirestore, 
-  queryFromFirestore, 
-  deleteFromFirestore 
-} from './firebase-storage';
+  saveToCloud, 
+  loadFromCloud, 
+  queryFromCloud, 
+  deleteFromCloud 
+} from './cloud-storage';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
 import { createLogger } from '@/lib/logger';
@@ -55,7 +55,7 @@ export async function saveStageData(
     const now = Date.now();
 
     // Save to stages collection
-    await saveToFirestore(STAGES_COLLECTION, stageId, {
+    await saveToCloud(STAGES_COLLECTION, stageId, {
       id: stageId,
       name: data.stage.name || 'Untitled Stage',
       description: data.stage.description,
@@ -69,7 +69,7 @@ export async function saveStageData(
     // Save scenes to separate records
     if (data.scenes && data.scenes.length > 0) {
       for (const [index, scene] of data.scenes.entries()) {
-        await saveToFirestore(SCENES_COLLECTION, scene.id, {
+        await saveToCloud(SCENES_COLLECTION, scene.id, {
           ...scene,
           stageId,
           order: scene.order ?? index,
@@ -84,9 +84,9 @@ export async function saveStageData(
       await saveChatSessions(stageId, data.chats, userId);
     }
 
-    log.info(`Saved stage to Firestore: ${stageId}`);
+    log.info(`Saved stage to Cloud: ${stageId}`);
   } catch (error) {
-    log.error('Failed to save stage to Firestore:', error);
+    log.error('Failed to save stage to Cloud:', error);
     throw error;
   }
 }
@@ -97,23 +97,23 @@ export async function saveStageData(
 export async function loadStageData(stageId: string): Promise<StageStoreData | null> {
   try {
     // Load stage
-    const stage = await loadFromFirestore<Stage & { currentSceneId?: string }>(STAGES_COLLECTION, stageId);
+    const stage = await loadFromCloud<Stage & { currentSceneId?: string }>(STAGES_COLLECTION, stageId);
     if (!stage) {
-      log.info(`Stage not found in Firestore: ${stageId}`);
+      log.info(`Stage not found in Cloud: ${stageId}`);
       return null;
     }
 
     const userId = stage.userId as string;
 
     // Load scenes
-    const allScenes = await queryFromFirestore<Scene>(SCENES_COLLECTION, userId, 'order');
+    const allScenes = await queryFromCloud<Scene>(SCENES_COLLECTION, userId, 'order');
     const scenes = allScenes.filter(s => s.stageId === stageId);
 
     // Load chat sessions from independent collection
     const { loadChatSessionsWithUserId } = await import('./chat-storage');
     const chats = await loadChatSessionsWithUserId(stageId, userId);
 
-    log.info(`Loaded stage from Firestore: ${stageId}, scenes: ${scenes.length}, chats: ${chats.length}`);
+    log.info(`Loaded stage from Cloud: ${stageId}, scenes: ${scenes.length}, chats: ${chats.length}`);
 
     return {
       stage,
@@ -122,7 +122,7 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       chats,
     };
   } catch (error) {
-    log.error('Failed to load stage from Firestore:', error);
+    log.error('Failed to load stage from Cloud:', error);
     return null;
   }
 }
@@ -133,13 +133,13 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 export async function deleteStageData(stageId: string, userId: string): Promise<void> {
   try {
     // Delete stage
-    await deleteFromFirestore(STAGES_COLLECTION, stageId);
+    await deleteFromCloud(STAGES_COLLECTION, stageId);
 
     // Delete scenes (requires querying first as we don't have bulk delete by query in client SDK without loop)
-    const allScenes = await queryFromFirestore<Scene>(SCENES_COLLECTION, userId);
+    const allScenes = await queryFromCloud<Scene>(SCENES_COLLECTION, userId);
     const stageScenes = allScenes.filter(s => s.stageId === stageId);
     for (const scene of stageScenes) {
-      await deleteFromFirestore(SCENES_COLLECTION, scene.id);
+      await deleteFromCloud(SCENES_COLLECTION, scene.id);
     }
 
     // Delete chat sessions, playback state, and outlines
@@ -148,15 +148,15 @@ export async function deleteStageData(stageId: string, userId: string): Promise<
     await deleteStageOutlines(stageId);
 
     // Delete generated agents
-    const agents = await queryFromFirestore<any>(GENERATED_AGENTS_COLLECTION, userId);
+    const agents = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
     const stageAgents = agents.filter(a => a.stageId === stageId);
     for (const agent of stageAgents) {
-      await deleteFromFirestore(GENERATED_AGENTS_COLLECTION, agent.id);
+      await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id);
     }
 
-    log.info(`Deleted stage from Firestore: ${stageId}`);
+    log.info(`Deleted stage from Cloud: ${stageId}`);
   } catch (error) {
-    log.error('Failed to delete stage from Firestore:', error);
+    log.error('Failed to delete stage from Cloud:', error);
     throw error;
   }
 }
@@ -166,12 +166,12 @@ export async function deleteStageData(stageId: string, userId: string): Promise<
  */
 export async function listStages(userId: string): Promise<StageListItem[]> {
   try {
-    const stages = await queryFromFirestore<any>(STAGES_COLLECTION, userId, 'updatedAt', 'desc');
+    const stages = await queryFromCloud<any>(STAGES_COLLECTION, userId, 'updatedAt', 'desc');
 
     const stageList: StageListItem[] = await Promise.all(
       stages.map(async (stage) => {
         // This is inefficient on client, but required for the UI
-        const allScenes = await queryFromFirestore<Scene>(SCENES_COLLECTION, userId);
+        const allScenes = await queryFromCloud<Scene>(SCENES_COLLECTION, userId);
         const sceneCount = allScenes.filter(s => s.stageId === stage.id).length;
 
         return {
@@ -187,7 +187,7 @@ export async function listStages(userId: string): Promise<StageListItem[]> {
 
     return stageList;
   } catch (error) {
-    log.error('Failed to list stages from Firestore:', error);
+    log.error('Failed to list stages from Cloud:', error);
     return [];
   }
 }
@@ -201,7 +201,7 @@ export async function getFirstSlideByStages(
 ): Promise<Record<string, import('../types/slides').Slide>> {
   const result: Record<string, import('../types/slides').Slide> = {};
   try {
-    const allScenes = await queryFromFirestore<Scene>(SCENES_COLLECTION, userId, 'order');
+    const allScenes = await queryFromCloud<Scene>(SCENES_COLLECTION, userId, 'order');
     
     for (const stageId of stageIds) {
       const scenes = allScenes.filter(s => s.stageId === stageId);
@@ -213,7 +213,7 @@ export async function getFirstSlideByStages(
       }
     }
   } catch (error) {
-    log.error('Failed to load thumbnails from Firestore:', error);
+    log.error('Failed to load thumbnails from Cloud:', error);
   }
   return result;
 }
@@ -223,10 +223,10 @@ export async function getFirstSlideByStages(
  */
 export async function stageExists(stageId: string): Promise<boolean> {
   try {
-    const stage = await loadFromFirestore(STAGES_COLLECTION, stageId);
+    const stage = await loadFromCloud(STAGES_COLLECTION, stageId);
     return !!stage;
   } catch (error) {
-    log.error('Failed to check stage existence in Firestore:', error);
+    log.error('Failed to check stage existence in Cloud:', error);
     return false;
   }
 }
@@ -238,7 +238,7 @@ export async function saveStageOutlines(
   outlines: import('../types/generation').SceneOutline[],
   userId: string
 ): Promise<void> {
-  await saveToFirestore(STAGE_OUTLINES_COLLECTION, stageId, {
+  await saveToCloud(STAGE_OUTLINES_COLLECTION, stageId, {
     stageId,
     outlines,
     updatedAt: Date.now(),
@@ -251,7 +251,7 @@ export async function saveStageOutlines(
 export async function loadStageOutlines(
   stageId: string
 ): Promise<import('../types/generation').SceneOutline[] | null> {
-  const data = await loadFromFirestore<any>(STAGE_OUTLINES_COLLECTION, stageId);
+  const data = await loadFromCloud<any>(STAGE_OUTLINES_COLLECTION, stageId);
   return data?.outlines || null;
 }
 
@@ -259,5 +259,5 @@ export async function loadStageOutlines(
  * Delete stage outlines from Firestore
  */
 export async function deleteStageOutlines(stageId: string): Promise<void> {
-  await deleteFromFirestore(STAGE_OUTLINES_COLLECTION, stageId);
+  await deleteFromCloud(STAGE_OUTLINES_COLLECTION, stageId);
 }

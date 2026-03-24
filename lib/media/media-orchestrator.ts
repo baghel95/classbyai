@@ -4,11 +4,11 @@ import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { 
-  uploadToStorage, 
-  saveToFirestore, 
-  deleteFromFirestore, 
+  uploadToCloudStorage, 
+  saveToCloud, 
+  deleteFromCloud, 
   MEDIA_FILES_COLLECTION 
-} from '@/lib/utils/firebase-storage';
+} from '@/lib/utils/cloud-storage';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -87,9 +87,9 @@ export async function retryMediaTask(elementId: string): Promise<void> {
     return;
   }
 
-  // Remove persisted failure record from Firestore
+  // Remove persisted failure record to Cloud Storage
   const dbKey = `${task.stageId}:${elementId}`;
-  await deleteFromFirestore(MEDIA_FILES_COLLECTION, dbKey).catch(() => {});
+  await deleteFromCloud(MEDIA_FILES_COLLECTION, dbKey).catch(() => {});
 
   store.markPendingForRetry(elementId);
   await generateSingleMedia(
@@ -138,20 +138,20 @@ async function generateSingleMedia(
     const blob = await fetchAsBlob(resultUrl);
     const posterBlob = posterUrl ? await fetchAsBlob(posterUrl).catch(() => undefined) : undefined;
 
-    // Upload to Firebase Storage
+    // Upload to Cloud Storage
     const fileName = `${req.elementId}.${req.type === 'image' ? 'png' : 'mp4'}`;
     const storagePath = `media/${stageId}/${fileName}`;
-    const finalUrl = await uploadToStorage(storagePath, blob, userId);
+    const finalUrl = await uploadToCloudStorage(storagePath, blob, userId);
 
     let finalPosterUrl: string | undefined;
     if (posterBlob) {
       const posterPath = `media/${stageId}/${req.elementId}_poster.jpg`;
-      finalPosterUrl = await uploadToStorage(posterPath, posterBlob, userId);
+      finalPosterUrl = await uploadToCloudStorage(posterPath, posterBlob, userId);
     }
 
-    // Save metadata to Firestore
+    // Save metadata to Cloud Storage
     const dbKey = `${stageId}:${req.elementId}`;
-    await saveToFirestore(MEDIA_FILES_COLLECTION, dbKey, {
+    await saveToCloud(MEDIA_FILES_COLLECTION, dbKey, {
       stageId,
       type: req.type,
       url: finalUrl,
@@ -175,10 +175,10 @@ async function generateSingleMedia(
     log.error(`Failed ${req.elementId}:`, message);
     useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
 
-    // Persist non-retryable failures to Firestore
+    // Persist non-retryable failures to Cloud Storage
     if (errorCode) {
       const dbKey = `${stageId}:${req.elementId}`;
-      await saveToFirestore(MEDIA_FILES_COLLECTION, dbKey, {
+      await saveToCloud(MEDIA_FILES_COLLECTION, dbKey, {
         stageId,
         type: req.type,
         mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',

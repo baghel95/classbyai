@@ -6,7 +6,7 @@
  *
  */
 
-import { loadFromFirestore, AUDIO_FILES_COLLECTION } from '@/lib/utils/firebase-storage';
+import { loadFromCloud, AUDIO_FILES_COLLECTION } from '@/lib/utils/cloud-storage';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioPlayer');
@@ -47,8 +47,8 @@ export class AudioPlayer {
         return true;
       }
 
-      // 2. Fall back to Firebase Firestore/Storage (client-generated TTS)
-      const audioRecord = await loadFromFirestore<any>(AUDIO_FILES_COLLECTION, audioId);
+      // 2. Fall back to Backend/Cloud Storage (client-generated TTS)
+      const audioRecord = await loadFromCloud<any>(AUDIO_FILES_COLLECTION, audioId);
 
       if (!audioRecord || !audioRecord.url) {
         // Pre-generated audio does not exist (generation failed), skip silently

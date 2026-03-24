@@ -21,10 +21,10 @@ import {
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import type { Stage } from '@/lib/types/stage';
 import { 
-  uploadToStorage, 
-  saveToFirestore, 
+  uploadToCloudStorage, 
+  saveToCloud, 
   AUDIO_FILES_COLLECTION 
-} from '@/lib/utils/firebase-storage';
+} from '@/lib/utils/cloud-storage';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
@@ -461,7 +461,7 @@ function GenerationPreviewContent() {
           const agentData = await agentResp.json();
           if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
 
-          // Save to Firestore and registry
+          // Save to Cloud Storage and registry
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
           const savedIds = await saveGeneratedAgents(stage.id, userId || '', agentData.agents);
           settings.setSelectedAgentIds(savedIds);
@@ -741,10 +741,10 @@ function GenerationPreviewContent() {
             const storagePath = `audio/${userId || 'public'}/${audioId}.${ttsData.format}`;
             
             // Upload to Storage
-            const downloadUrl = await uploadToStorage(storagePath, audioBlob, userId || '');
+            const downloadUrl = await uploadToCloudStorage(storagePath, audioBlob, userId || '');
             
-            // Save metadata to Firestore
-            await saveToFirestore(AUDIO_FILES_COLLECTION, audioId, {
+            // Save metadata to Cloud Storage
+            await saveToCloud(AUDIO_FILES_COLLECTION, audioId, {
               id: audioId,
               url: downloadUrl,
               format: ttsData.format,

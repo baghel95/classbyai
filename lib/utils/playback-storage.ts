@@ -6,10 +6,10 @@
  */
 
 import { 
-  saveToFirestore, 
-  loadFromFirestore, 
-  deleteFromFirestore 
-} from './firebase-storage';
+  saveToCloud, 
+  loadFromCloud, 
+  deleteFromCloud 
+} from './cloud-storage';
 
 export interface PlaybackSnapshot {
   sceneIndex: number;
@@ -30,7 +30,7 @@ export async function savePlaybackState(
   snapshot: PlaybackSnapshot,
   userId: string
 ): Promise<void> {
-  await saveToFirestore(PLAYBACK_COLLECTION, stageId, {
+  await saveToCloud(PLAYBACK_COLLECTION, stageId, {
     stageId,
     sceneIndex: snapshot.sceneIndex,
     actionIndex: snapshot.actionIndex,
@@ -45,7 +45,7 @@ export async function savePlaybackState(
  * Returns null if no saved state exists.
  */
 export async function loadPlaybackState(stageId: string): Promise<PlaybackSnapshot | null> {
-  const record = await loadFromFirestore<any>(PLAYBACK_COLLECTION, stageId);
+  const record = await loadFromCloud<any>(PLAYBACK_COLLECTION, stageId);
   if (!record) return null;
 
   return {
@@ -60,5 +60,5 @@ export async function loadPlaybackState(stageId: string): Promise<PlaybackSnapsh
  * Clear playback state for a stage (e.g. on playback complete or stop).
  */
 export async function clearPlaybackState(stageId: string): Promise<void> {
-  await deleteFromFirestore(PLAYBACK_COLLECTION, stageId);
+  await deleteFromCloud(PLAYBACK_COLLECTION, stageId);
 }

@@ -460,7 +460,6 @@ export function AgentBar() {
 
   const [open, setOpen] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Load browser native TTS voices
   useEffect(() => {
@@ -491,19 +490,6 @@ export function AgentBar() {
       : []),
   ];
   const showVoice = availableProviders.length > 0;
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (containerRef.current && containerRef.current.contains(target)) return;
-      // Don't close if clicking inside a Radix portal (Popover, Select, etc.)
-      if ((target as Element).closest?.('[data-radix-popper-content-wrapper]')) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
 
   const handleModeChange = (mode: 'preset' | 'auto') => {
     setAgentMode(mode);
@@ -648,175 +634,184 @@ export function AgentBar() {
   };
 
   return (
-    <div ref={containerRef} className="relative w-96">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            className={cn(
-              'group flex items-center gap-3 cursor-pointer rounded-full px-4 py-2 transition-all duration-300 w-full',
-              'border border-white/40 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl hover:bg-white/90 dark:hover:bg-slate-800/90 shadow-sm hover:shadow-md active:scale-[0.98]',
-            )}
-            onClick={() => setOpen(!open)}
-          >
-            <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors hidden sm:block font-medium flex-1 text-left truncate">
-              {open ? t('agentBar.expandedTitle') : t('agentBar.readyToLearn')}
-            </span>
-            {avatarRow}
-            {open ? (
-              <ChevronUp className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
-            ) : (
-              <ChevronDown className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
-            )}
-          </button>
-        </TooltipTrigger>
-        {!open && (
-          <TooltipContent side="bottom" sideOffset={4}>
-            {t('agentBar.configTooltip')}
-          </TooltipContent>
-        )}
-      </Tooltip>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="absolute right-0 top-full mt-1 z-50 w-96"
-          >
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06] shadow-[0_1px_8px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_8px_-2px_rgba(0,0,0,0.3)] px-2 py-1.5">
-              {/* Teacher — always visible */}
-              {teacherAgent && (
-                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/5 mb-2">
-                  <div
-                    className="size-7 rounded-full overflow-hidden shrink-0 ring-1 ring-border/40"
-                    style={{ boxShadow: `0 0 0 2px ${teacherAgent.color}30` }}
-                  >
-                    <img
-                      src={teacherAgent.avatar}
-                      alt={getAgentName(teacherAgent)}
-                      className="size-full object-cover"
-                    />
-                  </div>
-                  <span className="text-[13px] font-medium truncate min-w-0 flex-1">
-                    {getAgentName(teacherAgent)}
-                  </span>
-                  {showVoice && (
-                    <TeacherVoicePill
-                      availableProviders={availableProviders}
-                      disabled={!ttsEnabled}
-                    />
-                  )}
-                </div>
-              )}
-
-              {/* Mode tabs */}
-              <div className="flex rounded-lg border bg-muted/30 p-0.5 mb-2">
-                <button
-                  onClick={() => handleModeChange('preset')}
-                  className={cn(
-                    'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center',
-                    agentMode === 'preset'
-                      ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {t('settings.agentModePreset')}
-                </button>
-                <button
-                  onClick={() => handleModeChange('auto')}
-                  className={cn(
-                    'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center flex items-center justify-center gap-1',
-                    agentMode === 'auto'
-                      ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  <Sparkles className="h-3 w-3" />
-                  {t('settings.agentModeAuto')}
-                </button>
-              </div>
-
-              {agentMode === 'preset' ? (
-                <div className="max-h-56 overflow-y-auto -mx-0.5">
-                  {agents
-                    .filter((a) => a.role !== 'teacher')
-                    .map((agent, idx) => renderAgentRow(agent, idx + 1, false))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center pt-6 pb-3 gap-4">
-                  <div className="relative flex items-center justify-center">
-                    <div className="absolute size-10 rounded-full bg-violet-400/10 dark:bg-violet-400/15 animate-ping [animation-duration:3s]" />
-                    <div className="absolute size-12 rounded-full bg-violet-400/5 dark:bg-violet-400/10 animate-pulse [animation-duration:2.5s]" />
-                    <Shuffle className="relative size-5 text-violet-400 dark:text-violet-500" />
-                  </div>
-                  <div className="flex-1" />
-                  <div className="text-center space-y-1">
-                    <p className="text-[11px] text-muted-foreground/60">
-                      {t('settings.agentModeAutoDesc')}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/40">
-                      {t('agentBar.voiceAutoAssign')}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Max turns — compact stepper */}
-              <div className="flex items-center gap-1.5 px-2 py-1 mt-1 border-t border-border/30">
-                <MessageSquare className="size-3 text-muted-foreground/40 shrink-0" />
-                <span className="text-[11px] text-muted-foreground/50 flex-1">
-                  {t('settings.maxTurns')}
+    <div className="relative w-96">
+      <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                className={cn(
+                  'group flex items-center gap-3 cursor-pointer rounded-full px-4 py-2 transition-all duration-300 w-full',
+                  'border border-white/40 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl hover:bg-white/90 dark:hover:bg-slate-800/90 shadow-sm hover:shadow-md active:scale-[0.98]',
+                )}
+              >
+                <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors hidden sm:block font-medium flex-1 text-left truncate">
+                  {open ? t('agentBar.expandedTitle') : t('agentBar.readyToLearn')}
                 </span>
-                <div className="flex items-center rounded-full bg-muted/50 h-5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const v = Math.max(1, parseInt(maxTurns || '1') - 1);
-                      setMaxTurns(String(v));
-                    }}
-                    className="size-5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded-full hover:bg-muted"
-                  >
-                    <Minus className="size-2.5" />
-                  </button>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={maxTurns}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
-                      if (!raw) {
-                        setMaxTurns('');
-                        return;
-                      }
-                      const v = Math.min(20, Math.max(1, parseInt(raw)));
-                      setMaxTurns(String(v));
-                    }}
-                    onBlur={() => {
-                      if (!maxTurns || parseInt(maxTurns) < 1) setMaxTurns('1');
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-5 h-5 text-[11px] font-medium tabular-nums text-center bg-transparent outline-none border-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const v = Math.min(20, parseInt(maxTurns || '1') + 1);
-                      setMaxTurns(String(v));
-                    }}
-                    className="size-5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded-full hover:bg-muted"
-                  >
-                    <Plus className="size-2.5" />
-                  </button>
+                {avatarRow}
+                {open ? (
+                  <ChevronUp className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
+                ) : (
+                  <ChevronDown className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
+                )}
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {!open && (
+            <TooltipContent side="bottom" sideOffset={4}>
+              {t('agentBar.configTooltip')}
+            </TooltipContent>
+          )}
+        </Tooltip>
+
+        <PopoverContent 
+          align="end" 
+          sideOffset={8}
+          className="w-96 p-0 border-none bg-transparent shadow-none z-50"
+        >
+          <AnimatePresence>
+            {open && (
+              <motion.div
+                initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                className="w-full"
+              >
+                <div className="rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06] shadow-[0_1px_8px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_8px_-2px_rgba(0,0,0,0.3)] px-2 py-1.5">
+                  {/* Teacher — always visible */}
+                  {teacherAgent && (
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/5 mb-2">
+                      <div
+                        className="size-7 rounded-full overflow-hidden shrink-0 ring-1 ring-border/40"
+                        style={{ boxShadow: `0 0 0 2px ${teacherAgent.color}30` }}
+                      >
+                        <img
+                          src={teacherAgent.avatar}
+                          alt={getAgentName(teacherAgent)}
+                          className="size-full object-cover"
+                        />
+                      </div>
+                      <span className="text-[13px] font-medium truncate min-w-0 flex-1">
+                        {getAgentName(teacherAgent)}
+                      </span>
+                      {showVoice && (
+                        <TeacherVoicePill
+                          availableProviders={availableProviders}
+                          disabled={!ttsEnabled}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mode tabs */}
+                  <div className="flex rounded-lg border bg-muted/30 p-0.5 mb-2">
+                    <button
+                      onClick={() => handleModeChange('preset')}
+                      className={cn(
+                        'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center',
+                        agentMode === 'preset'
+                          ? 'bg-background shadow-sm text-foreground'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {t('settings.agentModePreset')}
+                    </button>
+                    <button
+                      onClick={() => handleModeChange('auto')}
+                      className={cn(
+                        'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center flex items-center justify-center gap-1',
+                        agentMode === 'auto'
+                          ? 'bg-background shadow-sm text-foreground'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      {t('settings.agentModeAuto')}
+                    </button>
+                  </div>
+
+                  {agentMode === 'preset' ? (
+                    <div className="max-h-56 overflow-y-auto -mx-0.5">
+                      {agents
+                        .filter((a) => a.role !== 'teacher')
+                        .map((agent, idx) => renderAgentRow(agent, idx + 1, false))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center pt-6 pb-3 gap-4">
+                      <div className="relative flex items-center justify-center">
+                        <div className="absolute size-10 rounded-full bg-violet-400/10 dark:bg-violet-400/15 animate-ping [animation-duration:3s]" />
+                        <div className="absolute size-12 rounded-full bg-violet-400/5 dark:bg-violet-400/10 animate-pulse [animation-duration:2.5s]" />
+                        <Shuffle className="relative size-5 text-violet-400 dark:text-violet-500" />
+                      </div>
+                      <div className="flex-1" />
+                      <div className="text-center space-y-1">
+                        <p className="text-[11px] text-muted-foreground/60">
+                          {t('settings.agentModeAutoDesc')}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/40">
+                          {t('agentBar.voiceAutoAssign')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Max turns — compact stepper */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 mt-1 border-t border-border/30">
+                    <MessageSquare className="size-3 text-muted-foreground/40 shrink-0" />
+                    <span className="text-[11px] text-muted-foreground/50 flex-1">
+                      {t('settings.maxTurns')}
+                    </span>
+                    <div className="flex items-center rounded-full bg-muted/50 h-5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const v = Math.max(1, parseInt(maxTurns || '1') - 1);
+                          setMaxTurns(String(v));
+                        }}
+                        className="size-5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                      >
+                        <Minus className="size-2.5" />
+                      </button>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={maxTurns}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          if (!raw) {
+                            setMaxTurns('');
+                            return;
+                          }
+                          const v = Math.min(20, Math.max(1, parseInt(raw)));
+                          setMaxTurns(String(v));
+                        }}
+                        onBlur={() => {
+                          if (!maxTurns || parseInt(maxTurns) < 1) setMaxTurns('1');
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-5 h-5 text-[11px] font-medium tabular-nums text-center bg-transparent outline-none border-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const v = Math.min(20, parseInt(maxTurns || '1') + 1);
+                          setMaxTurns(String(v));
+                        }}
+                        className="size-5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                      >
+                        <Plus className="size-2.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

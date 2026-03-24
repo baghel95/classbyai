@@ -1,5 +1,5 @@
 /**
- * Chat Storage - Persist chat sessions to Firestore
+ * Chat Storage - Persist chat sessions to Cloud
  *
  * Independent from stage/scene storage cycle.
  * Handles serialization, truncation, and batch writes.
@@ -8,10 +8,10 @@
 import type { ChatSession, ChatMessageMetadata, SessionStatus } from '@/lib/types/chat';
 import type { UIMessage } from 'ai';
 import { 
-  saveToFirestore, 
-  queryFromFirestore, 
-  deleteFromFirestore 
-} from './firebase-storage';
+  saveToCloud, 
+  queryFromCloud, 
+  deleteFromCloud 
+} from './cloud-storage';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ChatStorage');
@@ -23,7 +23,7 @@ const MAX_MESSAGES_PER_SESSION = 200;
 const CHATS_COLLECTION = 'chats';
 
 /**
- * Save chat sessions for a stage to Firestore.
+ * Save chat sessions for a stage to Cloud.
  */
 export async function saveChatSessions(
   stageId: string, 
@@ -33,10 +33,10 @@ export async function saveChatSessions(
   try {
     if (!sessions || sessions.length === 0) {
       // Delete all sessions for this stage if empty
-      const allChats = await queryFromFirestore<any>(CHATS_COLLECTION, userId);
+      const allChats = await queryFromCloud<any>(CHATS_COLLECTION, userId);
       const stageChats = allChats.filter(c => c.stageId === stageId);
       for (const chat of stageChats) {
-        await deleteFromFirestore(CHATS_COLLECTION, chat.id);
+        await deleteFromCloud(CHATS_COLLECTION, chat.id);
       }
       return;
     }
@@ -58,18 +58,18 @@ export async function saveChatSessions(
         lastActionIndex: session.lastActionIndex,
       };
 
-      await saveToFirestore(CHATS_COLLECTION, session.id, record, userId);
+      await saveToCloud(CHATS_COLLECTION, session.id, record, userId);
     }
     
-    log.info(`Saved chat sessions to Firestore for stage: ${stageId}`);
+    log.info(`Saved chat sessions to Cloud for stage: ${stageId}`);
   } catch (error) {
-    log.error('Failed to save chat sessions to Firestore:', error);
+    log.error('Failed to save chat sessions to Cloud:', error);
     throw error;
   }
 }
 
 /**
- * Load chat sessions for a stage from Firestore.
+ * Load chat sessions for a stage from Cloud.
  */
 export async function loadChatSessions(stageId: string): Promise<ChatSession[]> {
   try {
@@ -87,20 +87,20 @@ export async function loadChatSessions(stageId: string): Promise<ChatSession[]> 
     // Let's make loadChatSessions also accept userId.
     return []; // Placeholder - will be updated in next pass when I refactor the caller
   } catch (error) {
-    log.error('Failed to load chat sessions from Firestore:', error);
+    log.error('Failed to load chat sessions from Cloud:', error);
     return [];
   }
 }
 
 /**
- * Load chat sessions for a stage from Firestore with userId.
+ * Load chat sessions for a stage from Cloud with userId.
  */
 export async function loadChatSessionsWithUserId(
   stageId: string, 
   userId: string
 ): Promise<ChatSession[]> {
   try {
-    const allChats = await queryFromFirestore<any>(CHATS_COLLECTION, userId, 'createdAt');
+    const allChats = await queryFromCloud<any>(CHATS_COLLECTION, userId, 'createdAt');
     const records = allChats.filter(c => c.stageId === stageId);
 
     return records.map((record) => ({
@@ -118,7 +118,7 @@ export async function loadChatSessionsWithUserId(
       lastActionIndex: record.lastActionIndex,
     }));
   } catch (error) {
-    log.error('Failed to load chat sessions from Firestore:', error);
+    log.error('Failed to load chat sessions from Cloud:', error);
     return [];
   }
 }
@@ -128,12 +128,12 @@ export async function loadChatSessionsWithUserId(
  */
 export async function deleteChatSessions(stageId: string, userId: string): Promise<void> {
   try {
-    const allChats = await queryFromFirestore<any>(CHATS_COLLECTION, userId);
+    const allChats = await queryFromCloud<any>(CHATS_COLLECTION, userId);
     const stageChats = allChats.filter(c => c.stageId === stageId);
     for (const chat of stageChats) {
-      await deleteFromFirestore(CHATS_COLLECTION, chat.id);
+      await deleteFromCloud(CHATS_COLLECTION, chat.id);
     }
   } catch (error) {
-    log.error('Failed to delete chat sessions from Firestore:', error);
+    log.error('Failed to delete chat sessions from Cloud:', error);
   }
 }

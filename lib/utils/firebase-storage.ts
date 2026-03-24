@@ -1,16 +1,5 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  getDocs, 
-  orderBy,
-  updateDoc
-} from 'firebase/firestore';
-import { db } from '../firebase/config';
+// Removed Firebase Firestore imports
+const API_BASE_URL = 'http://localhost:5001/api';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('FirebaseStorage');
@@ -45,7 +34,20 @@ function removeUndefinedFields(obj: any): any {
 }
 
 /**
- * Save document to Firestore with userId mapping
+ * Helper to map Firebase collection names to API paths
+ */
+function getApiPath(collectionName: string): string {
+  switch (collectionName) {
+    case PLAYBACK_COLLECTION: return 'playback';
+    case MEDIA_FILES_COLLECTION: return 'media';
+    case AUDIO_FILES_COLLECTION: return 'audio';
+    case GENERATED_AGENTS_COLLECTION: return 'agents';
+    default: return collectionName;
+  }
+}
+
+/**
+ * Save document to new backend with userId mapping (Upsert)
  */
 export async function saveToFirestore<T>(
   collectionName: string,
@@ -54,46 +56,64 @@ export async function saveToFirestore<T>(
   userId: string
 ): Promise<void> {
   if (!userId) {
-    log.warn(`Skipping save to Firestore: No userId provided for ${collectionName}/${id}`);
+    log.warn(`Skipping save to backend: No userId provided for ${collectionName}/${id}`);
     return;
   }
   try {
-    const docRef = doc(db, collectionName, id);
+    const apiPath = getApiPath(collectionName);
     const cleanedData = removeUndefinedFields({
       ...data,
+      id, // Preserve ID for backend mapping to _id
       userId,
       updatedAt: Date.now(),
     });
-    await setDoc(docRef, cleanedData);
-    log.info(`Saved to Firestore: ${collectionName}/${id}`);
+
+    // Special logic for playback and settings if they used saveToFirestore
+    // though settings usually uses its own store.
+    const res = await fetch(`${API_BASE_URL}/${apiPath}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanedData),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to save to backend: ${res.statusText}`);
+    }
+
+    log.info(`Saved to backend: ${collectionName}/${id}`);
   } catch (error) {
-    log.error(`Failed to save to Firestore (${collectionName}/${id}):`, error);
+    log.error(`Failed to save to backend (${collectionName}/${id}):`, error);
     throw error;
   }
 }
 
 /**
- * Load document from Firestore
+ * Load document from new backend
  */
 export async function loadFromFirestore<T>(
   collectionName: string,
   id: string
 ): Promise<T | null> {
   try {
-    const docRef = doc(db, collectionName, id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return docSnap.data() as T;
-    }
-    return null;
+    const apiPath = getApiPath(collectionName);
+    // Special check for playback where ID is often the stageId
+    const url = apiPath === 'playback' 
+      ? `${API_BASE_URL}/${apiPath}/${id}`
+      : `${API_BASE_URL}/${apiPath}/${id}`;
+
+    const res = await fetch(url);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to load from backend: ${res.statusText}`);
+    
+    return await res.json() as T;
   } catch (error) {
-    log.error(`Failed to load from Firestore (${collectionName}/${id}):`, error);
+    log.error(`Failed to load from backend (${collectionName}/${id}):`, error);
     throw error;
   }
 }
 
 /**
- * Query documents from Firestore by userId
+ * Query documents from new backend by userId
  */
 export async function queryFromFirestore<T>(
   collectionName: string,
@@ -102,38 +122,45 @@ export async function queryFromFirestore<T>(
   orderDirection: 'asc' | 'desc' = 'asc'
 ): Promise<T[]> {
   if (!userId) {
-    log.warn(`Skipping query from Firestore: No userId provided for ${collectionName}`);
+    log.warn(`Skipping query from backend: No userId provided for ${collectionName}`);
     return [];
   }
   try {
-    const collRef = collection(db, collectionName);
-    let q = query(collRef, where('userId', '==', userId));
+    const apiPath = getApiPath(collectionName);
+    const queryParams = new URLSearchParams({ userId });
+    if (orderByField) queryParams.append('orderBy', orderByField);
+    queryParams.append('orderDir', orderDirection);
+
+    const res = await fetch(`${API_BASE_URL}/${apiPath}?${queryParams.toString()}`);
+    if (!res.ok) throw new Error(`Failed to query from backend: ${res.statusText}`);
     
-    if (orderByField) {
-      q = query(q, orderBy(orderByField, orderDirection));
-    }
-    
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => doc.data() as T);
+    return await res.json() as T[];
   } catch (error) {
-    log.error(`Failed to query from Firestore (${collectionName}):`, error);
+    log.error(`Failed to query from backend (${collectionName}):`, error);
     throw error;
   }
 }
 
 /**
- * Delete document from Firestore
+ * Delete document from new backend
  */
 export async function deleteFromFirestore(
   collectionName: string,
   id: string
 ): Promise<void> {
   try {
-    const docRef = doc(db, collectionName, id);
-    await deleteDoc(docRef);
-    log.info(`Deleted from Firestore: ${collectionName}/${id}`);
+    const apiPath = getApiPath(collectionName);
+    const res = await fetch(`${API_BASE_URL}/${apiPath}/${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Failed to delete from backend: ${res.statusText}`);
+    }
+
+    log.info(`Deleted from backend: ${collectionName}/${id}`);
   } catch (error) {
-    log.error(`Failed to delete from Firestore (${collectionName}/${id}):`, error);
+    log.error(`Failed to delete from backend (${collectionName}/${id}):`, error);
     throw error;
   }
 }

@@ -13,11 +13,11 @@ import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { 
-  queryFromFirestore, 
-  saveToFirestore, 
-  deleteFromFirestore,
+  queryFromCloud, 
+  saveToCloud, 
+  deleteFromCloud,
   GENERATED_AGENTS_COLLECTION 
-} from '@/lib/utils/firebase-storage';
+} from '@/lib/utils/cloud-storage';
 
 interface AgentRegistryState {
   agents: Record<string, AgentConfig>; // Map of agentId -> config
@@ -324,7 +324,7 @@ export function agentsToParticipants(
  * Returns the loaded agent IDs.
  */
 export async function loadGeneratedAgentsForStage(stageId: string, userId: string): Promise<string[]> {
-  const allRecords = await queryFromFirestore<any>(GENERATED_AGENTS_COLLECTION, userId);
+  const allRecords = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
   const records = allRecords.filter(r => r.stageId === stageId);
 
   if (records.length === 0) return [];
@@ -381,10 +381,10 @@ export async function saveGeneratedAgents(
   // or just overwrite if IDs are stable.
   
   // For now, let's just query and delete (standard Firestore pattern for small collections)
-  const existing = await queryFromFirestore<any>(GENERATED_AGENTS_COLLECTION, userId);
+  const existing = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
   const toDelete = existing.filter(a => a.stageId === stageId);
   for (const agent of toDelete) {
-    await deleteFromFirestore(GENERATED_AGENTS_COLLECTION, agent.id);
+    await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id);
   }
 
   // Clear from registry
@@ -396,7 +396,7 @@ export async function saveGeneratedAgents(
   // Write to Firestore
   const records = agents.map((a) => ({ ...a, stageId, createdAt: Date.now() }));
   for (const record of records) {
-    await saveToFirestore(GENERATED_AGENTS_COLLECTION, record.id, record, userId);
+    await saveToCloud(GENERATED_AGENTS_COLLECTION, record.id, record, userId);
   }
 
   // Add to registry

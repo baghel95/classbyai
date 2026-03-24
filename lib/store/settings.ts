@@ -145,10 +145,12 @@ export interface SettingsState {
   agentMode: 'preset' | 'auto';
   autoAgentCount: number;
 
-  // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
   chatAreaCollapsed: boolean;
   chatAreaWidth: number;
+  
+  // Auth
+  userId: string | null;
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
@@ -168,6 +170,7 @@ export interface SettingsState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setChatAreaCollapsed: (collapsed: boolean) => void;
   setChatAreaWidth: (width: number) => void;
+  setUserId: (userId: string | null) => void;
 
   // Audio actions
   setTTSProvider: (providerId: TTSProviderId) => void;
@@ -232,6 +235,10 @@ export interface SettingsState {
 
   // Server provider actions
   fetchServerProviders: () => Promise<void>;
+
+  // Cloud sync
+  saveSettings: () => Promise<void>;
+  loadSettings: (userId: string) => Promise<void>;
 }
 
 // Initialize default providers config
@@ -267,6 +274,7 @@ const getDefaultAudioConfig = () => ({
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
+    'sarvam-tts': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<TTSProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
   asrProvidersConfig: {
     'openai-whisper': { apiKey: '', baseUrl: '', enabled: true },
@@ -498,7 +506,7 @@ const migrateFromOldStorage = () => {
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => {
+    (set, get) => {
       // Try to migrate from old storage
       const migratedData = migrateFromOldStorage();
       const defaultAudioConfig = getDefaultAudioConfig();
@@ -528,6 +536,7 @@ export const useSettingsStore = create<SettingsState>()(
         sidebarCollapsed: true,
         chatAreaCollapsed: true,
         chatAreaWidth: 320,
+        userId: null,
 
         // Audio settings (use defaults)
         ...defaultAudioConfig,
@@ -590,6 +599,7 @@ export const useSettingsStore = create<SettingsState>()(
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
         setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),
         setChatAreaWidth: (width) => set({ chatAreaWidth: width }),
+        setUserId: (userId) => set({ userId }),
 
         // Audio actions
         setTTSProvider: (providerId) =>
@@ -1017,6 +1027,59 @@ export const useSettingsStore = create<SettingsState>()(
             log.warn('Failed to fetch server providers:', e);
           }
         },
+
+        // Cloud sync implementation
+        saveSettings: async () => {
+          const state = get() as SettingsState;
+          if (!state.userId) return;
+
+          try {
+            // Filter out internal state before saving
+            const { 
+              userId, setUserId, saveSettings, loadSettings, fetchServerProviders,
+              setModel, setProviderConfig, setProvidersConfig, setTtsModel,
+              setTTSMuted, setTTSVolume, setAutoPlayLecture, setPlaybackSpeed,
+              setSelectedAgentIds, setMaxTurns, setAgentMode, setAutoAgentCount,
+              setSidebarCollapsed, setChatAreaCollapsed, setChatAreaWidth,
+              setTTSProvider, setTTSVoice, setTTSSpeed, setASRProvider, setASRLanguage,
+              setTTSProviderConfig, setASRProviderConfig, setPDFProvider, setPDFProviderConfig,
+              setImageProvider, setImageModelId, setImageProviderConfig,
+              setVideoProvider, setVideoModelId, setVideoProviderConfig,
+              setImageGenerationEnabled, setVideoGenerationEnabled, setTTSEnabled, setASREnabled,
+              setWebSearchProvider, setWebSearchProviderConfig,
+              ...rest 
+            } = state;
+
+            await fetch(`http://localhost:5001/api/settings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...rest, userId }),
+            });
+            log.info('Settings synced to cloud');
+          } catch (e) {
+            log.error('Failed to sync settings to cloud:', e);
+          }
+        },
+
+        loadSettings: async (userId: string) => {
+          try {
+            const res = await fetch(`http://localhost:5001/api/settings/${userId}`);
+            if (res.ok) {
+              const cloudSettings = await res.json();
+              if (cloudSettings) {
+                // Merge cloud settings into store
+                set((state) => ({
+                  ...state,
+                  ...cloudSettings,
+                  userId, // Ensure userId is preserved
+                }));
+                log.info('Settings loaded from cloud');
+              }
+            }
+          } catch (e) {
+            log.error('Failed to load settings from cloud:', e);
+          }
+        },
       };
     },
     {
@@ -1147,3 +1210,17 @@ export const useSettingsStore = create<SettingsState>()(
     },
   ),
 );
+
+// Auto-sync settings to cloud on change
+if (typeof window !== 'undefined') {
+  let timeout: NodeJS.Timeout;
+  useSettingsStore.subscribe((state, prevState) => {
+    // Only sync if userId is present and something other than userId changed
+    if (state.userId && state !== prevState) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        useSettingsStore.getState().saveSettings();
+      }, 2000); // Debounce sync by 2s
+    }
+  });
+}

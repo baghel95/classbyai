@@ -1,13 +1,13 @@
 /**
- * Image Storage Utilities - Use Firebase Storage
+ * Image Storage Utilities - Use Cloud Storage
  *
- * Store images in Firebase Storage instead of local IndexedDB.
+ * Store images in Cloud Storage instead of local IndexedDB.
  */
 
 import { 
-  uploadToStorage, 
-  deleteFromStorage 
-} from './firebase-storage';
+  uploadToCloudStorage, 
+  deleteFromCloudStorage 
+} from './cloud-storage';
 import { nanoid } from 'nanoid';
 import { createLogger } from '@/lib/logger';
 
@@ -33,7 +33,7 @@ function base64ToBlob(base64DataUrl: string): Blob {
 }
 
 /**
- * Store images in Firebase Storage
+ * Store images in Cloud Storage
  * Returns array of stored image download URLs
  */
 export async function storeImages(
@@ -48,7 +48,7 @@ export async function storeImages(
       const blob = base64ToBlob(img.src);
       const storagePath = `sessions/${sessionId}/${img.id}.png`;
       
-      const downloadUrl = await uploadToStorage(storagePath, blob, userId);
+      const downloadUrl = await uploadToCloudStorage(storagePath, blob, userId);
       storedUrls.push(downloadUrl);
     } catch (error) {
       log.error(`Failed to store image ${img.id} to Storage:`, error);
@@ -89,7 +89,7 @@ export async function storePdfBlob(file: File, userId: string): Promise<string> 
     type: file.type || 'application/pdf',
   });
 
-  return await uploadToStorage(storagePath, blob, userId);
+  return await uploadToCloudStorage(storagePath, blob, userId);
 }
 
 /**

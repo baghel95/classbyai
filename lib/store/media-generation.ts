@@ -9,7 +9,7 @@
 import { create } from 'zustand';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
-import { queryFromFirestore, MEDIA_FILES_COLLECTION } from '@/lib/utils/firebase-storage';
+import { queryFromCloud, MEDIA_FILES_COLLECTION } from '@/lib/utils/cloud-storage';
 
 const log = createLogger('MediaGenerationStore');
 
@@ -165,7 +165,7 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
 
   restoreFromDB: async (stageId, userId) => {
     try {
-      const allRecords = await queryFromFirestore<any>(MEDIA_FILES_COLLECTION, userId);
+      const allRecords = await queryFromCloud<any>(MEDIA_FILES_COLLECTION, userId);
       const records = allRecords.filter(r => r.stageId === stageId);
       
       const restored: Record<string, MediaTask> = {};
@@ -206,7 +206,7 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
         set((s) => ({ tasks: { ...s.tasks, ...restored } }));
       }
     } catch (err) {
-      log.error('Failed to restore from Firestore:', err);
+      log.error('Failed to restore from Cloud Storage:', err);
     }
   },
 

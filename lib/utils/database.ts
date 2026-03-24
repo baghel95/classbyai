@@ -15,7 +15,7 @@ import { createLogger } from '@/lib/logger';
 /**
  * ! LEGACY DATABASE - DO NOT USE FOR NEW FEATURES
  * This file contains the legacy IndexedDB (Dexie) schema and interactions.
- * New data should be stored in Firebase (Firestore/Storage) via firebase-storage.ts.
+ * New data should be stored in Backend (MongoDB/Cloud Storage) via cloud-storage.ts.
  */
 
 const log = createLogger('Database');

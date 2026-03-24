@@ -39,7 +39,6 @@ yarn-error.log*
 
 # env files
 .env*
-!.env.example
 
 # server provider config (contains API keys)
 server-providers.yml
@@ -66,5 +65,6 @@ next-env.d.ts
 # docs
 /docs
 
-.gcs-service-account.json
-.classbyai-firebase.json
+gcs-service-account.json
+classbyai-firebase.json
+.env.example

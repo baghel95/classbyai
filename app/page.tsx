@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
@@ -530,6 +531,10 @@ function HomePage() {
 // ─── Greeting Bar ───
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 
+function isCustomAvatar(src: string) {
+  return src.startsWith('data:');
+}
+
 function GreetingBar() {
   const { t } = useI18n();
   const router = useRouter();
@@ -550,19 +555,6 @@ function GreetingBar() {
 
   const displayName = nickname || t('profile.defaultNickname');
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setEditingName(false);
-        setAvatarPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
   const startEditName = () => {
     setNameDraft(nickname);
     setEditingName(true);
@@ -579,6 +571,10 @@ function GreetingBar() {
     if (!file) return;
     if (file.size > MAX_AVATAR_SIZE) {
       toast.error(t('profile.fileTooLarge'));
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error(t('profile.invalidFileType'));
       return;
     }
     const reader = new FileReader();
@@ -603,63 +599,233 @@ function GreetingBar() {
 
   return (
     <div ref={containerRef} className="relative pl-4 pr-2 pt-3.5 pb-1 w-auto">
-      <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-      {!open && (
-        <div
-          className="flex items-center gap-3 cursor-pointer transition-all duration-300 group rounded-full px-3 py-2 border border-white/40 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl hover:bg-white/90 dark:hover:bg-slate-800/90 shadow-sm"
-          onClick={() => setOpen(true)}
-        >
-          <div className="shrink-0 relative">
-            <div className="size-9 rounded-full overflow-hidden ring-2 ring-violet-500/20">
-              <img src={avatar} alt="" className="size-full object-cover" />
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 size-4 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-sm">
-              <Pencil className="size-2 text-violet-500" />
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="text-xs text-muted-foreground/60">{t('home.greeting')}</span>
-            <span className="text-[13px] font-semibold ml-1">{displayName}</span>
-          </div>
-        </div>
-      )}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-            className="absolute left-4 top-3.5 z-50 w-64 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm rounded-2xl p-3 shadow-xl"
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAvatarUpload}
+      />
+
+      <Popover
+        open={open}
+        onOpenChange={(val) => {
+          setOpen(val);
+          if (!val) {
+            setEditingName(false);
+            setAvatarPickerOpen(false);
+          }
+        }}
+      >
+        <PopoverTrigger asChild>
+          <div
+            className={cn(
+              "flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]",
+              open && "bg-muted/60"
+            )}
           >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="size-10 rounded-full overflow-hidden bg-slate-100 ring-2 ring-violet-500/20">
+            <div className="shrink-0 relative">
+              <div className="size-8 rounded-full overflow-hidden ring-[1.5px] ring-border/30 group-hover:ring-violet-400/60 dark:group-hover:ring-violet-400/40 transition-all duration-300">
                 <img src={avatar} alt="" className="size-full object-cover" />
               </div>
-              <div className="flex-1">
-                {editingName ? (
-                  <input
-                    ref={nameInputRef} value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
-                    onBlur={commitName} className="w-full bg-transparent border-b border-violet-500 outline-none text-sm font-semibold"
-                  />
-                ) : (
-                  <div className="flex items-center gap-2 cursor-pointer" onClick={startEditName}>
-                    <span className="text-sm font-semibold">{displayName}</span>
-                    <Pencil className="size-3 text-muted-foreground" />
-                  </div>
-                )}
+              <div className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full bg-white dark:bg-slate-800 border border-border/40 flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity">
+                <Pencil className="size-[7px] text-muted-foreground/70" />
               </div>
             </div>
-            <UITextarea
-              value={bio} onChange={(e) => setBio(e.target.value)}
-              placeholder={t('profile.bioPlaceholder')} className="h-20 text-xs mb-3"
-            />
-            <Button
-              className="w-full text-xs h-8"
-              onClick={() => { useOnboardingStore.getState().setCompleted(false); router.push('/onboarding'); }}
-            >
-              {t('onboarding.completeProfile')}
-            </Button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="flex-1 min-w-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="leading-none select-none flex items-center gap-1">
+                    <span>
+                      <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
+                        {t('home.greeting')}
+                      </span>
+                      <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
+                        {displayName}
+                      </span>
+                    </span>
+                    <ChevronDown className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}>
+                  {t('profile.editTooltip')}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        </PopoverTrigger>
+        <PopoverContent 
+          align="start" 
+          sideOffset={8} 
+          className="w-64 p-0 border-none bg-transparent shadow-none z-50"
+        >
+          <AnimatePresence>
+            {open && (
+              <motion.div
+                initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                className="w-64 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm rounded-2xl p-3 shadow-xl ring-1 ring-black/[0.04] dark:ring-white/[0.06]"
+              >
+                {/* ── Row: avatar + name ── */}
+                <div
+                  className="flex items-center gap-2.5 cursor-pointer transition-all duration-200"
+                  onClick={() => {
+                    setOpen(false);
+                    setEditingName(false);
+                    setAvatarPickerOpen(false);
+                  }}
+                >
+                  {/* Avatar */}
+                  <div
+                    className="shrink-0 relative cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAvatarPickerOpen(!avatarPickerOpen);
+                    }}
+                  >
+                    <div className="size-8 rounded-full overflow-hidden ring-[1.5px] ring-violet-300/70 dark:ring-violet-500/40 transition-all duration-300">
+                      <img src={avatar} alt="" className="size-full object-cover" />
+                    </div>
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full bg-white dark:bg-slate-800 border border-border/60 flex items-center justify-center"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'size-2 text-muted-foreground/70 transition-transform duration-200',
+                          avatarPickerOpen && 'rotate-180',
+                        )}
+                      />
+                    </motion.div>
+                  </div>
+
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    {editingName ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          ref={nameInputRef}
+                          value={nameDraft}
+                          onChange={(e) => setNameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitName();
+                            if (e.key === 'Escape') {
+                              setEditingName(false);
+                            }
+                          }}
+                          onBlur={commitName}
+                          maxLength={20}
+                          placeholder={t('profile.defaultNickname')}
+                          className="flex-1 min-w-0 h-6 bg-transparent border-b border-border/80 text-[13px] font-semibold text-foreground outline-none placeholder:text-muted-foreground/40"
+                        />
+                        <button
+                          onClick={commitName}
+                          className="shrink-0 size-5 rounded flex items-center justify-center text-violet-500 hover:bg-violet-100 dark:hover:bg-violet-900/30"
+                        >
+                          <Check className="size-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditName();
+                        }}
+                        className="group/name inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <span className="text-[13px] font-semibold text-foreground/85 group-hover/name:text-foreground transition-colors">
+                          {displayName}
+                        </span>
+                        <Pencil className="size-2.5 text-muted-foreground/30 opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Collapse arrow */}
+                  <motion.div
+                    initial={{ opacity: 0, y: -2 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="shrink-0 size-6 rounded-full flex items-center justify-center hover:bg-black/4 dark:hover:bg-white/6 transition-colors"
+                  >
+                    <ChevronUp className="size-3.5 text-muted-foreground/50" />
+                  </motion.div>
+                </div>
+
+                {/* ── Expandable content ── */}
+                <div className="pt-2" onClick={(e) => e.stopPropagation()}>
+                  {/* Avatar picker */}
+                  <AnimatePresence>
+                    {avatarPickerOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.15, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-1 pb-2.5 flex items-center gap-1.5 flex-wrap">
+                          {AVATAR_OPTIONS.map((url) => (
+                            <button
+                              key={url}
+                              onClick={() => setAvatar(url)}
+                              className={cn(
+                                'size-7 rounded-full overflow-hidden bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
+                                'hover:scale-110 active:scale-95',
+                                avatar === url
+                                  ? 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-0'
+                                  : 'hover:ring-1 hover:ring-muted-foreground/30',
+                              )}
+                            >
+                              <img src={url} alt="" className="size-full" />
+                            </button>
+                          ))}
+                          <label
+                            className={cn(
+                              'size-7 rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 border border-dashed',
+                              'hover:scale-110 active:scale-95',
+                              isCustomAvatar(avatar)
+                                ? 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-0 border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/30'
+                                : 'border-muted-foreground/30 text-muted-foreground/50 hover:border-muted-foreground/50',
+                            )}
+                            onClick={() => avatarInputRef.current?.click()}
+                            title={t('profile.uploadAvatar')}
+                          >
+                            <ImagePlus className="size-3" />
+                          </label>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Bio */}
+                  <UITextarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder={t('profile.bioPlaceholder')}
+                    maxLength={200}
+                    rows={2}
+                    className="resize-none border-border/40 bg-transparent min-h-[72px] text-[13px]! leading-relaxed! placeholder:text-[11px]! placeholder:leading-relaxed! focus-visible:ring-1 focus-visible:ring-border/60 mb-2"
+                  />
+
+                  {/* Profile Action */}
+                  <Button
+                    className="w-full text-xs h-8"
+                    onClick={() => {
+                      useOnboardingStore.getState().setCompleted(false);
+                      router.push("/onboarding");
+                    }}
+                  >
+                    {t("onboarding.completeProfile")}
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

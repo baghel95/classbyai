@@ -4,7 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
-import { uploadToStorage, saveToFirestore, AUDIO_FILES_COLLECTION } from '@/lib/utils/firebase-storage';
+import { uploadToCloudStorage, saveToCloud, AUDIO_FILES_COLLECTION } from '@/lib/utils/cloud-storage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
@@ -164,12 +164,12 @@ export async function generateAndStoreTTS(
   }
   const blob = new Blob([bytes], { type: `audio/${data.format}` });
   
-  // Upload to Firebase Storage
+  // Upload to Cloud Storage Storage
   const storagePath = `audio/${audioId}.${data.format}`;
-  const downloadUrl = await uploadToStorage(storagePath, blob, userId);
+  const downloadUrl = await uploadToCloudStorage(storagePath, blob, userId);
 
   // Save metadata to Firestore
-  await saveToFirestore(AUDIO_FILES_COLLECTION, audioId, {
+  await saveToCloud(AUDIO_FILES_COLLECTION, audioId, {
     url: downloadUrl,
     format: data.format,
     text,
