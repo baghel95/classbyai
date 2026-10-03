@@ -5,17 +5,51 @@ import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('GenerateClassroom API');
 
 export const maxDuration = 30;
 
+type PdfContent = NonNullable<GenerateClassroomInput['pdfContent']>;
+
+function isValidPdfContent(value: unknown): value is PdfContent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const { text, images } = value as { text?: unknown; images?: unknown };
+  return (
+    typeof text === 'string' &&
+    Array.isArray(images) &&
+    images.every((item) => typeof item === 'string')
+  );
+}
+
 export async function POST(req: NextRequest) {
+  let requirementSnippet: string | undefined;
   try {
     const rawBody = (await req.json()) as Partial<GenerateClassroomInput>;
+    requirementSnippet = rawBody.requirement?.substring(0, 60);
+    const pdfContent = rawBody.pdfContent;
+
+    if (pdfContent !== undefined && !isValidPdfContent(pdfContent)) {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'Invalid pdfContent: expected { text: string; images: string[] }',
+      );
+    }
+
     const body: GenerateClassroomInput = {
       requirement: rawBody.requirement || '',
-      ...(rawBody.pdfContent ? { pdfContent: rawBody.pdfContent } : {}),
-      ...(rawBody.language ? { language: rawBody.language } : {}),
+      ...(pdfContent !== undefined ? { pdfContent } : {}),
+
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
+      ...(rawBody.webSearchProviderId ? { webSearchProviderId: rawBody.webSearchProviderId } : {}),
+      ...(rawBody.webSearchApiKey ? { webSearchApiKey: rawBody.webSearchApiKey } : {}),
+      ...(rawBody.webSearchModelId ? { webSearchModelId: rawBody.webSearchModelId } : {}),
+      ...(rawBody.baiduSubSources ? { baiduSubSources: rawBody.baiduSubSources } : {}),
       ...(rawBody.enableImageGeneration != null
         ? { enableImageGeneration: rawBody.enableImageGeneration }
         : {}),
@@ -50,6 +84,10 @@ export async function POST(req: NextRequest) {
       202,
     );
   } catch (error) {
+    log.error(
+      `Classroom generation job creation failed [requirement="${requirementSnippet ?? 'unknown'}..."]:`,
+      error,
+    );
     return apiError(
       'INTERNAL_ERROR',
       500,

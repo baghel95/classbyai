@@ -1,25 +1,23 @@
 import { useState, useRef, useCallback } from 'react';
+import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
+import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioRecorder');
 
-// TypeScript declarations for Web Speech API
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    SpeechRecognition: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    webkitSpeechRecognition: any;
-  }
-}
+// Window.SpeechRecognition / webkitSpeechRecognition have minimal constructor
+// declarations in types/web-speech.d.ts; this hook casts the richer instance.
 
 export interface UseAudioRecorderOptions {
   onTranscription?: (text: string) => void;
   onError?: (error: string) => void;
+  /** When true and using browser-native ASR, recognition stays active until explicitly stopped. */
+  continuous?: boolean;
 }
 
 export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
-  const { onTranscription, onError } = options;
+  const { onTranscription, onError, continuous = false } = options;
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -30,6 +28,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed
   const speechRecognitionRef = useRef<any>(null);
+  // Synchronous lock to prevent rapid re-entry (React state updates are async)
+  const busyRef = useRef(false);
 
   // Send audio to server for transcription
   const transcribeAudio = useCallback(
@@ -38,15 +38,22 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
       try {
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
 
         // Get current ASR configuration from settings store
         // Note: This requires importing useSettingsStore in browser context
         if (typeof window !== 'undefined') {
           const { useSettingsStore } = await import('@/lib/store/settings');
           const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+          const uploadAudio = await normalizeASRUploadAudio(asrProviderId, audioBlob);
+          formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
 
           formData.append('providerId', asrProviderId);
+          formData.append(
+            'modelId',
+            asrProvidersConfig?.[asrProviderId]?.modelId ||
+              ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
+              '',
+          );
           formData.append('language', asrLanguage);
 
           // Append API key and base URL if configured
@@ -54,9 +61,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           if (providerConfig?.apiKey?.trim()) {
             formData.append('apiKey', providerConfig.apiKey);
           }
-          if (providerConfig?.baseUrl?.trim()) {
-            formData.append('baseUrl', providerConfig.baseUrl);
+          const effectiveBaseUrl =
+            providerConfig?.baseUrl?.trim() || providerConfig?.customDefaultBaseUrl || '';
+          if (effectiveBaseUrl) {
+            formData.append('baseUrl', effectiveBaseUrl);
           }
+        } else {
+          formData.append('audio', audioBlob, 'recording.webm');
         }
 
         const response = await fetch('/api/transcription', {
@@ -84,11 +95,22 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
   // Start recording
   const startRecording = useCallback(async () => {
+    // Synchronous lock — React state is async so isRecording may be stale
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       // Get current ASR configuration
       if (typeof window !== 'undefined') {
         const { useSettingsStore } = await import('@/lib/store/settings');
-        const { asrProviderId, asrLanguage } = useSettingsStore.getState();
+        const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+
+        // Browser-native ASR never reaches the server route, so enforce the
+        // operator force-off locally before invoking the Web Speech API.
+        const serverDisabledError = getASRServerDisabledError(asrProvidersConfig[asrProviderId]);
+        if (serverDisabledError) {
+          onError?.(serverDisabledError);
+          return;
+        }
 
         // Use browser native ASR if configured
         if (asrProviderId === 'browser-native') {
@@ -98,11 +120,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
             return;
           }
 
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          const recognition = new SpeechRecognition();
+          const SpeechRecognitionCtor = (window.SpeechRecognition ||
+            window.webkitSpeechRecognition)!;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
+          const recognition: any = new SpeechRecognitionCtor();
 
           recognition.lang = asrLanguage || 'zh-CN';
-          recognition.continuous = false;
+          recognition.continuous = continuous;
           recognition.interimResults = false;
 
           recognition.onstart = () => {
@@ -116,12 +140,25 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           };
 
           recognition.onresult = (event: {
+            resultIndex: number;
             results: {
-              [index: number]: { [index: number]: { transcript: string } };
+              [index: number]: {
+                isFinal: boolean;
+                [index: number]: { transcript: string };
+              };
+              length: number;
             };
           }) => {
-            const transcript = event.results[0][0].transcript;
-            onTranscription?.(transcript);
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const result = event.results[i];
+              if (result.isFinal && result[0]?.transcript) {
+                transcript += result[0].transcript;
+              }
+            }
+            if (transcript) {
+              onTranscription?.(transcript);
+            }
           };
 
           recognition.onerror = (event: { error: string }) => {
@@ -129,6 +166,16 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
             let errorMessage = '语音识别失败';
 
             switch (event.error) {
+              case 'aborted':
+                // Non-fatal: caused by our own cancel/stop logic or rapid toggle
+                busyRef.current = false;
+                setIsRecording(false);
+                setRecordingTime(0);
+                if (timerRef.current) {
+                  clearInterval(timerRef.current);
+                  timerRef.current = null;
+                }
+                return;
               case 'no-speech':
                 errorMessage = '未检测到语音输入';
                 break;
@@ -146,6 +193,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
             }
 
             onError?.(errorMessage);
+            busyRef.current = false;
             setIsRecording(false);
             setRecordingTime(0);
             if (timerRef.current) {
@@ -155,6 +203,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           };
 
           recognition.onend = () => {
+            busyRef.current = false;
             setIsRecording(false);
             setRecordingTime(0);
             if (timerRef.current) {
@@ -198,6 +247,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
         // Send to server for transcription
         await transcribeAudio(audioBlob);
+        busyRef.current = false;
       };
 
       // Start recording
@@ -210,10 +260,11 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (error) {
+      busyRef.current = false;
       log.error('Failed to start recording:', error);
       onError?.('无法访问麦克风，请检查权限设置');
     }
-  }, [onTranscription, onError, transcribeAudio]);
+  }, [onTranscription, onError, transcribeAudio, continuous]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -221,6 +272,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.stop();
       speechRecognitionRef.current = null;
+      busyRef.current = false;
       setIsRecording(false);
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -232,6 +284,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     // Stop MediaRecorder if active
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      busyRef.current = false;
       setIsRecording(false);
 
       if (timerRef.current) {
@@ -246,8 +299,10 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     // Cancel Speech Recognition if active
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.onresult = null; // Prevent transcription callback
+      speechRecognitionRef.current.onerror = null; // Suppress browser abort error events
       speechRecognitionRef.current.stop();
       speechRecognitionRef.current = null;
+      busyRef.current = false;
       setIsRecording(false);
       setRecordingTime(0);
       if (timerRef.current) {
@@ -269,6 +324,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
       }
 
+      busyRef.current = false;
       setIsRecording(false);
       setRecordingTime(0);
 

@@ -5,6 +5,9 @@
 
 import type { PDFProviderId, PDFProviderConfig } from './types';
 
+export const MINERU_CLOUD_DEFAULT_BASE = 'https://mineru.net/api/v4';
+export const ALIDOCMIND_DEFAULT_BASE = 'https://docmind-api.cn-hangzhou.aliyuncs.com';
+
 /**
  * PDF Provider Registry
  */
@@ -23,6 +26,22 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     requiresApiKey: false,
     icon: '/logos/mineru.png',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
+  },
+
+  'mineru-cloud': {
+    id: 'mineru-cloud',
+    name: 'MinerU (Cloud)',
+    requiresApiKey: true,
+    icon: '/logos/mineru.png',
+    features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
+  },
+
+  alidocmind: {
+    id: 'alidocmind',
+    name: 'AliDocMind',
+    requiresApiKey: true,
+    icon: '/logos/aliyun.svg',
+    features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
   },
 };
 

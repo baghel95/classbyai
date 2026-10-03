@@ -1,12 +1,39 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSession } from 'next-auth/react';
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Copy,
+  Folder,
+  FolderPlus,
+  ImagePlus,
+  Pencil,
+  Trash2,
+  Search,
+  Settings,
+  Sun,
+  Moon,
+  Monitor,
+  ChevronUp,
+  Upload,
+  Sparkles,
+  Atom,
+  X,
+  Presentation,
+  Loader2,
+} from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
+import { InputGroup, InputGroupInput, InputGroupButton } from '@/components/ui/input-group';
 import { Textarea as UITextarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
@@ -15,18 +42,43 @@ import { AgentBar } from '@/components/agent/agent-bar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storePdfBlob } from '@/lib/utils/image-storage';
-import type { UserRequirements } from '@/lib/types/generation';
+import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
+import { normalizeDocumentMimeType } from '@/lib/document/mime';
+import {
+  courseMaterialFingerprint,
+  dedupeCourseMaterialFiles,
+} from '@/lib/document/course-materials';
+import type {
+  SelectedCourseMaterial,
+  SessionDocumentSource,
+  UserRequirements,
+} from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
+import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
   StageListItem,
   listStages,
   deleteStageData,
+  renameStage,
   getFirstSlideByStages,
+  revokeThumbnailSlideMediaUrls,
+  listFolders,
+  createFolder,
+  renameFolder,
+  deleteFolder,
+  setStageFolder,
+  FolderNameError,
+  LIBRARY_CHANGED_EVENT,
+  type DeleteFolderMode,
 } from '@/lib/utils/stage-storage';
-import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
-import type { Slide } from '@/lib/types/slides';
+import type { FolderRecord } from '@/lib/types/folder';
+import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
+import { FolderCard } from '@/components/discovery/folder-card';
+import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
+import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
+import type { Slide } from '@openmaic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useOnboardingStore } from '@/lib/store/onboarding';
 import { toast } from 'sonner';
@@ -37,50 +89,89 @@ import { FeaturesSection } from '@/components/landing/features-section';
 import { UseCasesSection } from '@/components/landing/use-cases-section';
 import { Header } from '@/components/landing/header';
 import { Footer } from '@/components/landing/footer';
-import { 
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronDown,
-  Clock,
-  Copy,
-  ImagePlus,
-  Moon,
-  Pencil,
-  Play,
-  Settings,
-  Sparkles,
-  Sun,
-  Trash2,
-  ChevronUp
-} from 'lucide-react';
+import { useImportClassroom } from '@/lib/import/use-import-classroom';
+import {
+  isProWorkbenchEnabled,
+  isPptxImportEnabled,
+  shouldShowVocationalTestUi,
+} from '@/lib/config/feature-flags';
+import { useImportPptx } from '@/lib/import/use-import-pptx';
+import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
+import { ProBadge } from '@/components/workbench/ProBadge';
+import { arrivedByProSwap, startProSwap } from '@/lib/workbench/pro-swap';
+import {
+  readLastWorkspaceSessionId,
+  workspaceResumeHref,
+} from '@/lib/workbench/workspace-session-memory';
 
 const log = createLogger('Home');
 
-const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
-const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
+const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
+
+const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
+
+let workbenchRuntimeCache: boolean | null = null;
 
 interface FormState {
-  pdfFile: File | null;
+  courseMaterials: SelectedCourseMaterial[];
   requirement: string;
-  language: 'en-US' | 'hi-IN' | 'en-IN';
+  language: 'en-US' | 'hi-IN' | 'en-IN' | 'zh-CN';
+  interactiveMode: boolean;
+  vocationalTestMode: boolean;
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
-  pdfFile: null,
+  courseMaterials: [],
   requirement: '',
   language: 'en-US',
+  interactiveMode: false,
+  vocationalTestMode: false,
   webSearch: false,
 };
 
 function HomePage() {
-  const { t, locale, setLocale } = useI18n();
-  const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
+
+  const [swapped] = useState(arrivedByProSwap);
+  const heroEnter = (from: Record<string, number>) => (swapped ? false : from);
+  const showVocationalTestUi = shouldShowVocationalTestUi();
+  const workbenchBuildEnabled = isProWorkbenchEnabled();
+  const [workbenchRuntimeEnabled, setWorkbenchRuntimeEnabled] = useState(
+    workbenchRuntimeCache === true,
+  );
+
+  useEffect(() => {
+    if (!workbenchBuildEnabled || workbenchRuntimeCache !== null) return;
+    let cancelled = false;
+    fetch('/api/agent/runtime')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        workbenchRuntimeCache = body?.enabled === true;
+        if (!cancelled) setWorkbenchRuntimeEnabled(workbenchRuntimeCache);
+      })
+      .catch(() => {
+        /* probe failed */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workbenchBuildEnabled]);
+
+  const workbenchEntryEnabled = workbenchBuildEnabled && workbenchRuntimeEnabled;
+  const enterWorkbench = () => {
+    const href = workspaceResumeHref(readLastWorkspaceSessionId());
+    startProSwap(href, (next) => router.push(next));
+  };
+
+  useEffect(() => {
+    if (workbenchEntryEnabled) router.prefetch('/workspace');
+  }, [router, workbenchEntryEnabled]);
+
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
@@ -88,7 +179,6 @@ function HomePage() {
   >(undefined);
 
   const generateRef = useRef<HTMLDivElement>(null);
-
   const scrollToGenerate = () => {
     generateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -96,93 +186,160 @@ function HomePage() {
   const { cachedValue: cachedRequirement, updateCache: updateRequirementCache } =
     useDraftCache<string>({ key: 'requirementDraft' });
 
-  const currentModelId = useSettingsStore((s) => s.modelId);
+  const providersConfig = useSettingsStore((s) => s.providersConfig);
+  const hasUsableProvider = hasUsableLLMProvider(providersConfig);
   const [storeHydrated, setStoreHydrated] = useState(false);
+
   const [recentOpen, setRecentOpen] = useState(true);
+  const persistRecentOpen = (next: boolean) => {
+    setRecentOpen(next);
+    try {
+      localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     setStoreHydrated(true);
     try {
-      const savedRecent = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
-      if (savedRecent !== null) setRecentOpen(savedRecent !== 'false');
-      
-      const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
-      const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-      const updates: Partial<FormState> = {};
-      if (savedWebSearch === 'true') updates.webSearch = true;
-      if (['en-US', 'hi-IN', 'en-IN'].includes(savedLanguage || '')) {
-        updates.language = savedLanguage as any;
+      const saved = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
+      if (saved !== null) setRecentOpen(saved !== 'false');
+    } catch {
+      /* ignore */
+    }
+    try {
+      const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
+      if (savedInteractiveMode === 'true') {
+        setForm((prev) => ({ ...prev, interactiveMode: true }));
       }
-      if (Object.keys(updates).length > 0) {
-        setForm((prev) => ({ ...prev, ...updates }));
-      }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
-  const [prevCachedRequirement, setPrevCachedRequirement] = useState(cachedRequirement);
-  if (cachedRequirement !== prevCachedRequirement) {
-    setPrevCachedRequirement(cachedRequirement);
-    if (cachedRequirement) {
-      setForm((prev) => ({ ...prev, requirement: cachedRequirement }));
-    }
-  }
+  const draftRestoredRef = useRef(false);
+  useEffect(() => {
+    if (draftRestoredRef.current) return;
+    if (!cachedRequirement) return;
+    draftRestoredRef.current = true;
+    setForm((prev) => (prev.requirement ? prev : { ...prev, requirement: cachedRequirement }));
+  }, [cachedRequirement]);
 
   // Auto-trigger generation if coming back from login
   const action = searchParams.get('action');
   useEffect(() => {
-    // If we have an action but the requirement is still loading from cache, wait.
     const effectiveRequirement = form.requirement || cachedRequirement;
-    
     if (storeHydrated && session && action === 'generate' && effectiveRequirement) {
       if (!form.requirement && cachedRequirement) {
         setForm((prev) => ({ ...prev, requirement: cachedRequirement }));
-        return; // Wait for the next render with updated state
+        return;
       }
-
-      // Clear the action from URL to avoid re-triggering
       const newParams = new URLSearchParams(searchParams.toString());
       newParams.delete('action');
       newParams.delete('prompt');
       newParams.delete('callbackUrl');
       router.replace(`/?${newParams.toString()}`);
-      
       handleGenerate();
     }
   }, [storeHydrated, session, action, form.requirement, cachedRequirement]);
 
-  const needsSetup = storeHydrated && !currentModelId;
   const [error, setError] = useState<string | null>(null);
+  const [preparingGenerate, setPreparingGenerate] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [createAndMoveTarget, setCreateAndMoveTarget] = useState<string | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const thumbnailsRef = useRef<Record<string, Slide>>({});
 
-  const loadClassrooms = async (userId: string) => {
+  const replaceThumbnails = (slides: Record<string, Slide>) => {
+    const previous = thumbnailsRef.current;
+    thumbnailsRef.current = slides;
+    setThumbnails(slides);
+    window.setTimeout(() => revokeThumbnailSlideMediaUrls(previous), 0);
+  };
+
+  const loadClassrooms = async (targetUserId?: string) => {
     try {
-      const list = await listStages(userId);
+      const uid = targetUserId || session?.user?.id;
+      const list = await listStages(uid);
       setClassrooms(list);
       if (list.length > 0) {
-        const slides = await getFirstSlideByStages(list.map((c) => c.id), userId);
-        setThumbnails(slides);
+        const slides = await getFirstSlideByStages(list.map((c) => c.id), uid);
+        replaceThumbnails(slides);
+      } else {
+        replaceThumbnails({});
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
+      toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
     }
   };
+
+  const loadFolders = async () => {
+    try {
+      setFolders(await listFolders());
+    } catch (err) {
+      log.error('Failed to load folders:', err);
+    }
+  };
+
+  const importFolderRef = useRef<string | undefined>(undefined);
+  const handleImportSuccess = async (importedStageId: string) => {
+    const folderId = importFolderRef.current;
+    importFolderRef.current = undefined;
+    if (folderId) {
+      try {
+        await setStageFolder(importedStageId, folderId);
+      } catch (err) {
+        log.error('Failed to assign imported course to folder:', err);
+        toast.error(t('classroom.moveFailed'));
+      }
+    }
+    await loadClassrooms();
+  };
+
+  const { importing, fileInputRef, triggerFileSelect, handleFileChange } =
+    useImportClassroom(handleImportSuccess);
+  const triggerImport = () => {
+    importFolderRef.current = currentFolderId;
+    triggerFileSelect();
+  };
+
+  const {
+    importing: pptxImporting,
+    fileInputRef: pptxFileInputRef,
+    triggerFileSelect: triggerPptxFileSelect,
+    handleFileChange: handlePptxFileChange,
+  } = useImportPptx();
 
   useEffect(() => {
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
-  }, []);
+    void Promise.all([loadClassrooms(session?.user?.id), loadFolders()]).finally(() => setHydrated(true));
 
-  useEffect(() => {
-    if (session?.user?.id) {
-      loadClassrooms(session.user.id);
-    } else {
-      setClassrooms([]);
-      setThumbnails({});
-    }
+    const onLibraryChanged = () => {
+      void Promise.all([loadClassrooms(session?.user?.id), loadFolders()]);
+    };
+    window.addEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
+
+    return () => {
+      window.removeEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
+      revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
+      thumbnailsRef.current = {};
+    };
   }, [session?.user?.id]);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
@@ -202,65 +359,265 @@ function HomePage() {
     }
   };
 
+  const handleRename = async (id: string, newName: string) => {
+    try {
+      await renameStage(id, newName);
+      setClassrooms((prev) => prev.map((c) => (c.id === id ? { ...c, name: newName } : c)));
+    } catch (err) {
+      log.error('Failed to rename classroom:', err);
+      toast.error(t('classroom.renameFailed'));
+    }
+  };
+
+  const handleCreateFolder = async (name: string) => {
+    const folder = await createFolder(name);
+    setFolders((prev) => [...prev, folder]);
+    if (createAndMoveTarget) {
+      await handleMoveCourse(createAndMoveTarget, folder.id);
+      setCreateAndMoveTarget(null);
+    }
+  };
+
+  const handleRenameFolder = (folder: FolderRecord) => async (newName: string) => {
+    try {
+      const updated = await renameFolder(folder.id, newName);
+      setFolders((prev) => prev.map((f) => (f.id === folder.id ? updated : f)));
+    } catch (err) {
+      if (err instanceof FolderNameError) {
+        toast.error(t(`classroom.${err.code}`));
+      } else {
+        toast.error(t('classroom.renameFailed'));
+      }
+      throw err;
+    }
+  };
+
+  const confirmDeleteFolder = async (folder: FolderRecord, mode: DeleteFolderMode) => {
+    try {
+      await deleteFolder(folder.id, mode);
+      setFolders((prev) => prev.filter((f) => f.id !== folder.id));
+      if (mode === 'deleteCourses') {
+        setClassrooms((prev) => prev.filter((c) => c.folderId !== folder.id));
+      } else {
+        setClassrooms((prev) =>
+          prev.map((c) => (c.folderId === folder.id ? { ...c, folderId: undefined } : c)),
+        );
+      }
+      if (currentFolderId === folder.id) {
+        setCurrentFolderId(undefined);
+      }
+      toast.success(t('classroom.folderDeleted'));
+    } catch (err) {
+      log.error('Failed to delete folder:', err);
+      toast.error(t('classroom.deleteFailed'));
+    }
+  };
+
+  const handleMoveCourse = async (stageId: string, targetFolderId?: string) => {
+    try {
+      await setStageFolder(stageId, targetFolderId);
+      setClassrooms((prev) =>
+        prev.map((c) => (c.id === stageId ? { ...c, folderId: targetFolderId } : c)),
+      );
+    } catch (err) {
+      log.error('Failed to move course:', err);
+      toast.error(t('classroom.moveFailed'));
+    }
+  };
+
+  const handleCreateAndMove = (stageId: string) => () => {
+    setCreateAndMoveTarget(stageId);
+    setNewFolderOpen(true);
+  };
+
+  const courseCountByFolder = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of classrooms) {
+      if (c.folderId) {
+        map.set(c.folderId, (map.get(c.folderId) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [classrooms]);
+
+  const coverSlidesByFolder = useMemo(() => {
+    const coursesByFolder = new Map<string, StageListItem[]>();
+    for (const c of classrooms) {
+      if (c.folderId) {
+        const arr = coursesByFolder.get(c.folderId) ?? [];
+        arr.push(c);
+        coursesByFolder.set(c.folderId, arr);
+      }
+    }
+    const map = new Map<string, (Slide | undefined)[]>();
+    for (const [folderId, courses] of coursesByFolder) {
+      courses.sort((a, b) => b.updatedAt - a.updatedAt);
+      map.set(
+        folderId,
+        courses.slice(0, 3).map((c) => thumbnails[c.id]),
+      );
+    }
+    return map;
+  }, [classrooms, thumbnails]);
+
+  const folderNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of folders) map.set(f.id, f.name);
+    return map;
+  }, [folders]);
+
+  const isSearching = searchQuery.trim().length > 0;
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
+
+  const filteredClassrooms = useMemo(() => {
+    if (!deferredSearchQuery) return classrooms;
+    return classrooms.filter((c) => c.name.toLowerCase().includes(deferredSearchQuery));
+  }, [classrooms, deferredSearchQuery]);
+
+  const currentFolderClassrooms = useMemo(() => {
+    if (!currentFolderId) return [];
+    return classrooms.filter((c) => c.folderId === currentFolderId);
+  }, [classrooms, currentFolderId]);
+
+  const currentFolder = useMemo(
+    () => folders.find((f) => f.id === currentFolderId),
+    [folders, currentFolderId],
+  );
+
+  const visibleClassrooms = useMemo(() => {
+    if (isSearching) return filteredClassrooms;
+    if (currentFolderId !== undefined) return currentFolderClassrooms;
+    return classrooms.filter((c) => !c.folderId);
+  }, [isSearching, filteredClassrooms, currentFolderId, currentFolderClassrooms, classrooms]);
+
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
-      if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
-      if (field === 'language') localStorage.setItem(LANGUAGE_STORAGE_KEY, String(value));
+      if (field === 'interactiveMode')
+        localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const addCourseMaterials = (files: File[]) => {
+    if (preparingGenerate) return;
+    const dedupedFiles = dedupeCourseMaterialFiles(form.courseMaterials, files);
+    const startOrder = form.courseMaterials.length + 1;
+    const additions = dedupedFiles.map((file, index) => ({
+      id: nanoid(8),
+      file,
+      name: file.name,
+      size: file.size,
+      lastModified: file.lastModified,
+      type: file.type,
+      order: startOrder + index,
+    }));
+
+    if (additions.length === 0) return;
+    setForm((prev) => {
+      const missing = additions.filter((addition) => {
+        if (prev.courseMaterials.some((item) => item.id === addition.id)) return false;
+        return !prev.courseMaterials.some(
+          (item) => courseMaterialFingerprint(item) === courseMaterialFingerprint(addition),
+        );
+      });
+      if (missing.length === 0) return prev;
+      return { ...prev, courseMaterials: [...prev.courseMaterials, ...missing] };
+    });
+  };
+
+  const removeCourseMaterial = (id: string) => {
+    if (preparingGenerate) return;
+    setForm((prev) => ({
+      ...prev,
+      courseMaterials: prev.courseMaterials
+        .filter((item) => item.id !== id)
+        .map((item, index) => ({ ...item, order: index + 1 })),
+    }));
   };
 
   const handleGenerate = async () => {
-    if (!canGenerate) return;
-    
+    if (preparingGenerate) return;
+    if (!form.requirement.trim()) {
+      setError(t('upload.requirementRequired'));
+      return;
+    }
     if (!session) {
       toast.info('Please log in to generate an agent');
       router.push(`/login?callbackUrl=/&action=generate&prompt=${encodeURIComponent(form.requirement)}`);
       return;
     }
-
-    if (!currentModelId) {
-      toast.error(t('settings.modelNotConfigured'));
-      setSettingsOpen(true);
-      return;
-    }
-    if (!form.requirement.trim()) {
-      setError(t('upload.requirementRequired'));
-      return;
-    }
     setError(null);
+    setPreparingGenerate(true);
+
     try {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
         language: form.language,
+        userAvatar: userProfile.avatar || undefined,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
-        webSearch: form.webSearch || undefined,
+        webSearch: useSettingsStore.getState().webSearchEnabled || undefined,
+        interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
+        ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
       };
-      let pdfStorageKey: string | undefined;
-      let pdfFileName: string | undefined;
+
+      const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+      const settingsSnapshot = useSettingsStore.getState();
+      const frozenPdfProviderId = settingsSnapshot.pdfProviderId;
+      const frozenPdfProviderConfig = settingsSnapshot.pdfProvidersConfig?.[
+        settingsSnapshot.pdfProviderId
+      ];
+
+      let documentSources: SessionDocumentSource[] | undefined;
       let pdfProviderId: string | undefined;
-      let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
-      if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile, session.user?.id!);
-        pdfFileName = form.pdfFile.name;
-        const settings = useSettingsStore.getState();
-        pdfProviderId = settings.pdfProviderId;
-        const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
-        if (providerCfg) {
-          pdfProviderConfig = { apiKey: providerCfg.apiKey, baseUrl: providerCfg.baseUrl };
+      let pdfProviderConfig:
+        | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
+        | undefined;
+
+      if (frozenMaterials.length > 0) {
+        pdfProviderId = frozenPdfProviderId;
+        pdfProviderConfig = frozenPdfProviderConfig;
+
+        const storedDocumentKeys: string[] = [];
+        try {
+          documentSources = [];
+          for (const [index, item] of frozenMaterials.entries()) {
+            const storageKey = await storeDocumentBlob(item.file, session?.user?.id);
+            storedDocumentKeys.push(storageKey);
+            documentSources.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              lastModified: item.lastModified,
+              mimeType: normalizeDocumentMimeType({
+                mimeType: item.file.type,
+                fileName: item.file.name,
+              }),
+              order: index + 1,
+              storageKey,
+              providerId: pdfProviderId,
+            });
+          }
+        } catch (error) {
+          await Promise.allSettled(storedDocumentKeys.map((key) => deleteDocumentBlob(key)));
+          throw error;
         }
       }
+
       const sessionState = {
         sessionId: nanoid(),
         requirements,
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
-        pdfStorageKey,
-        pdfFileName,
+        documentSources,
+        pdfStorageKey: documentSources?.[0]?.storageKey,
+        pdfFileName: documentSources?.[0]?.name,
+        documentMimeType: documentSources?.[0]?.mimeType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
@@ -271,6 +628,8 @@ function HomePage() {
     } catch (err) {
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
+    } finally {
+      setPreparingGenerate(false);
     }
   };
 
@@ -285,7 +644,7 @@ function HomePage() {
     return date.toLocaleDateString();
   };
 
-  const canGenerate = !!form.requirement.trim();
+  const canGenerate = !!form.requirement.trim() && hasUsableProvider;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -301,6 +660,23 @@ function HomePage() {
         scrollToGenerate={scrollToGenerate} 
       />
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".zip"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      {PPTX_IMPORT_ENABLED && (
+        <input
+          ref={pptxFileInputRef}
+          type="file"
+          accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          onChange={handlePptxFileChange}
+          className="hidden"
+        />
+      )}
+
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={(open) => {
@@ -310,7 +686,7 @@ function HomePage() {
         initialSection={settingsSection}
       />
 
-            {/* ═══ App Section (Generation Input) ═══ */}
+      {/* ═══ App Section (Generation Input) ═══ */}
       <section ref={generateRef} className="relative z-20 w-full flex flex-col items-center px-4 py-24 bg-linear-to-b from-transparent to-slate-50/50 dark:to-slate-950/30">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -319,35 +695,32 @@ function HomePage() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           className="w-full max-w-[850px] flex flex-col items-center"
         >
-            {/* ── Marketing Hero ── */}
-      <section className="relative z-10 pt-10 pb-10 px-6 flex flex-col items-center text-center">
-      
-        
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.1 }}
-          className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 max-w-4xl"
-        >
-          <span className="bg-linear-to-r from-slate-900 via-purple-800 to-slate-900 dark:from-white dark:via-purple-400 dark:to-white bg-clip-text text-transparent">
-            Your Immersive AI Classroom
-          </span>
-          <br />
-          <span className="text-slate-900/40 dark:text-white/20">in Just One Click</span>
-        </motion.h1>
-      </section>
+          {/* ── Marketing Hero ── */}
+          <div className="relative z-10 pt-10 pb-6 px-6 flex flex-col items-center text-center">
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.1 }}
+              className="text-5xl md:text-7xl font-extrabold tracking-tight mb-4 max-w-4xl"
+            >
+              <span className="bg-linear-to-r from-slate-900 via-purple-800 to-slate-900 dark:from-white dark:via-purple-400 dark:to-white bg-clip-text text-transparent">
+                Your Immersive AI Classroom
+              </span>
+              <br />
+              <span className="text-slate-900/40 dark:text-white/20">in Just One Click</span>
+            </motion.h1>
 
-                  {/* ── Slogan ── */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.25 }}
-          className="text-sm text-muted-foreground/60 mb-8"
-        >
-          {t('home.slogan')}
-        </motion.p>
+            <motion.p
+              initial={heroEnter({ opacity: 0 })}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.25 }}
+              className="text-sm text-muted-foreground/60 mb-6"
+            >
+              {t('home.slogan')}
+            </motion.p>
+          </div>
 
-
+          {/* ── Unified input area ── */}
           <div className="w-full relative group/input">
             <div className="absolute -inset-1 bg-linear-to-r from-purple-500/20 to-blue-500/20 rounded-[22px] blur-sm opacity-0 group-focus-within/input:opacity-100 transition duration-1000 group-hover/input:duration-200" />
             <div className="relative w-full rounded-2xl border border-white/40 dark:border-white/5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-2xl shadow-black/5 dark:shadow-black/20 transition-all duration-500 focus-within:ring-2 focus-within:ring-purple-500/20 overflow-hidden">
@@ -371,19 +744,30 @@ function HomePage() {
               <div className="px-3 pb-3 flex items-end gap-2">
                 <div className="flex-1 min-w-0">
                   <GenerationToolbar
-                    language={form.language}
-                    onLanguageChange={(lang) => updateForm('language', lang)}
-                    webSearch={form.webSearch}
-                    onWebSearchChange={(v) => updateForm('webSearch', v)}
+                    courseMaterials={form.courseMaterials}
+                    onCourseMaterialsAdd={addCourseMaterials}
+                    onCourseMaterialRemove={removeCourseMaterial}
+                    onPdfError={setError}
+                    materialsLocked={preparingGenerate}
                     onSettingsOpen={(section) => {
                       setSettingsSection(section);
                       setSettingsOpen(true);
                     }}
-                    pdfFile={form.pdfFile}
-                    onPdfFileChange={(f) => updateForm('pdfFile', f)}
-                    onPdfError={setError}
                   />
                 </div>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InteractiveModeButton
+                      pressed={form.interactiveMode}
+                      label={t('toolbar.interactiveModeLabel')}
+                      onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('toolbar.interactiveModeHint')}
+                  </TooltipContent>
+                </Tooltip>
 
                 <SpeechButton
                   size="md"
@@ -398,16 +782,22 @@ function HomePage() {
 
                 <button
                   onClick={handleGenerate}
-                  disabled={!canGenerate}
+                  disabled={!canGenerate || preparingGenerate}
                   className={cn(
                     'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                    canGenerate
+                    canGenerate && !preparingGenerate
                       ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
                       : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
                   )}
                 >
-                  <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                  <ArrowUp className="size-3.5" />
+                  <span className="text-xs font-medium">
+                    {preparingGenerate ? t('stage.generating') : t('toolbar.enterClassroom')}
+                  </span>
+                  {preparingGenerate ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-3.5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -427,87 +817,298 @@ function HomePage() {
           </AnimatePresence>
         </motion.div>
 
-        {classrooms.length > 0 && (
-          <div className="w-full max-w-[1000px] mt-16 px-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="relative z-10 w-full flex flex-col items-center"
-            >
+        {/* ═══ Recent Classrooms / Folders Section ═══ */}
+        <div className="w-full max-w-[1000px] mt-16 px-4">
+          <div className="group w-full flex items-center gap-4 h-9">
+            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
+            <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
               <button
                 onClick={() => {
-                  const next = !recentOpen;
-                  setRecentOpen(next);
-                  try {
-                    localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-                  } catch { /* ignore */ }
+                  if (currentFolderId) setCurrentFolderId(undefined);
+                  else persistRecentOpen(!recentOpen);
                 }}
-                className="group w-full flex items-center gap-6 py-6 cursor-pointer"
+                className="flex items-center gap-2 hover:text-foreground/70 transition-colors cursor-pointer"
               >
-                <div className="flex-1 h-px bg-linear-to-r from-transparent via-border/40 to-border/40 group-hover:via-border/80 transition-all duration-500" />
-                <span className="shrink-0 flex items-center gap-2.5 text-sm font-medium text-muted-foreground/50 group-hover:text-foreground/80 transition-all duration-300 select-none">
-                  <div className="size-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:bg-violet-500/10 transition-colors">
-                    <Clock className="size-4 group-hover:text-violet-500 transition-colors" />
-                  </div>
-                  {t('classroom.recentClassrooms')}
-                  <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-bold tabular-nums opacity-60 group-hover:opacity-100 transition-opacity">
-                    {classrooms.length}
-                  </span>
-                  <motion.div
-                    animate={{ rotate: recentOpen ? 180 : 0 }}
-                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                  >
-                    <ChevronDown className="size-4 opacity-40 group-hover:opacity-100 transition-opacity" />
-                  </motion.div>
+                <Clock className="size-3.5" />
+                {t('classroom.recentClassrooms')}
+                {currentFolder && (
+                  <>
+                    <ChevronRight className="size-3 opacity-40" />
+                    <span className="text-foreground/80 truncate max-w-[160px]">
+                      {currentFolder.name}
+                    </span>
+                  </>
+                )}
+                <span className="text-[11px] tabular-nums opacity-60">
+                  {currentFolder ? currentFolderClassrooms.length : classrooms.length}
                 </span>
-                <div className="flex-1 h-px bg-linear-to-l from-transparent via-border/40 to-border/40 group-hover:via-border/80 transition-all duration-500" />
+                <motion.div
+                  animate={{ rotate: recentOpen ? 180 : 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  <ChevronDown className="size-3.5" />
+                </motion.div>
               </button>
 
-              <AnimatePresence>
-                {recentOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-                    className="w-full overflow-hidden"
+              {/* Search toggle */}
+              <AnimatePresence initial={false}>
+                {!searchOpen ? (
+                  <motion.button
+                    key="search-icon"
+                    ref={searchButtonRef}
+                    type="button"
+                    aria-label={t('classroom.searchAriaLabel')}
+                    onClick={() => {
+                      setSearchOpen(true);
+                      if (!recentOpen) persistRecentOpen(true);
+                      requestAnimationFrame(() => searchInputRef.current?.focus());
+                    }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.12, ease: 'easeOut' }}
+                    className="flex items-center justify-center size-6 rounded-full text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/50 transition-colors cursor-pointer"
                   >
-                    <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-x-5 gap-y-8">
-                      {classrooms.map((classroom, i) => (
-                        <motion.div
-                          key={classroom.id}
-                          initial={{ opacity: 0, y: 16 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
+                    <Search className="size-3.5" />
+                  </motion.button>
+                ) : (
+                  <motion.div
+                    key="search-input"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 200 }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <InputGroup
+                      className={cn(
+                        'h-7 text-[12px] rounded-full bg-muted/40 border-transparent shadow-none',
+                        'transition-colors',
+                        'hover:bg-muted/60',
+                        'has-[[data-slot=input-group-control]:focus-visible]:bg-muted/60',
+                        'has-[[data-slot=input-group-control]:focus-visible]:border-transparent',
+                        'has-[[data-slot=input-group-control]:focus-visible]:ring-0',
+                      )}
+                    >
+                      <InputGroupInput
+                        ref={searchInputRef}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            if (searchQuery) {
+                              setSearchQuery('');
+                            } else {
+                              setSearchOpen(false);
+                              requestAnimationFrame(() => searchButtonRef.current?.focus());
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!searchQuery) {
+                            setSearchOpen(false);
+                          }
+                        }}
+                        placeholder={t('classroom.searchPlaceholder')}
+                        aria-label={t('classroom.searchAriaLabel')}
+                        className="h-7 pl-3 placeholder:text-muted-foreground/50"
+                      />
+                      {searchQuery && (
+                        <InputGroupButton
+                          size="icon-xs"
+                          aria-label={t('classroom.clearSearch')}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setSearchQuery('');
+                            searchInputRef.current?.focus();
+                          }}
                         >
-                          <ClassroomCard
-                            classroom={classroom}
-                            slide={thumbnails[classroom.id]}
-                            formatDate={formatDate}
-                            onDelete={handleDelete}
-                            confirmingDelete={pendingDeleteId === classroom.id}
-                            onConfirmDelete={() => confirmDelete(classroom.id)}
-                            onCancelDelete={() => setPendingDeleteId(null)}
-                            onClick={() => {
-                              if (!session) {
-                                router.push(`/login?callbackUrl=/classroom/${classroom.id}`);
-                                return;
-                              }
-                              router.push(`/classroom/${classroom.id}`);
-                            }}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
+                          <X />
+                        </InputGroupButton>
+                      )}
+                    </InputGroup>
                   </motion.div>
                 )}
               </AnimatePresence>
-            </motion.div>
-          </div>
-        )}
-      </section>
 
+              <button
+                onClick={triggerImport}
+                disabled={importing}
+                className="group/import grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+              >
+                <Upload className="size-3" />
+                <span className="overflow-hidden opacity-0 group-hover/import:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                  {t('import.classroom')}
+                </span>
+              </button>
+              {PPTX_IMPORT_ENABLED && (
+                <button
+                  onClick={triggerPptxFileSelect}
+                  disabled={pptxImporting}
+                  className="group/import-pptx grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+                >
+                  <Presentation className="size-3" />
+                  <span className="overflow-hidden opacity-0 group-hover/import-pptx:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                    {t('import.pptx')}
+                  </span>
+                </button>
+              )}
+              {/* New folder */}
+              {!currentFolderId && !isSearching && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!recentOpen) persistRecentOpen(true);
+                    setNewFolderOpen(true);
+                  }}
+                  aria-label={t('classroom.newFolderTitle')}
+                  title={t('classroom.newFolderTitle')}
+                  className="inline-flex items-center justify-center size-7 rounded-full bg-muted/40 text-muted-foreground ring-1 ring-border/50 hover:bg-muted hover:text-foreground hover:ring-border transition-[background-color,color,box-shadow] cursor-pointer"
+                >
+                  <FolderPlus className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
+          </div>
+
+          {/* Expandable content */}
+          <AnimatePresence>
+            {recentOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+                className="w-full overflow-hidden"
+              >
+                {folders.length === 0 && classrooms.length === 0 ? (
+                  <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
+                    {t('classroom.emptyLibraryHint')}
+                  </div>
+                ) : !isSearching && currentFolderId && currentFolderClassrooms.length === 0 ? (
+                  <div className="pt-8 text-center">
+                    <p className="text-[14px] text-muted-foreground">
+                      {t('classroom.emptyFolderHint')}
+                    </p>
+                  </div>
+                ) : isSearching && filteredClassrooms.length === 0 ? (
+                  <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
+                    {t('classroom.searchEmpty')}
+                  </div>
+                ) : (
+                  <div className="pt-8">
+                    {isSearching && (
+                      <div className="mb-4 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentFolderId(undefined);
+                            setSearchQuery('');
+                            setSearchOpen(false);
+                          }}
+                          className="hover:text-foreground transition-colors"
+                        >
+                          {t('classroom.recentClassrooms')}
+                        </button>
+                        <ChevronRight className="size-3.5" />
+                        <span className="text-foreground font-medium">
+                          {t('classroom.searchResults')}
+                        </span>
+                        <span className="ml-1.5 text-[12px] text-muted-foreground tabular-nums">
+                          ({filteredClassrooms.length})
+                        </span>
+                      </div>
+                    )}
+
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={
+                          isSearching
+                            ? 'search'
+                            : currentFolderId
+                              ? `folder-${currentFolderId}`
+                              : 'root'
+                        }
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8"
+                      >
+                        {!isSearching &&
+                          currentFolderId === undefined &&
+                          folders.map((folder, i) => (
+                            <motion.div
+                              key={folder.id}
+                              initial={{ opacity: 0, y: 16 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
+                            >
+                              <FolderCard
+                                folder={folder}
+                                courseCount={courseCountByFolder.get(folder.id) ?? 0}
+                                coverSlides={coverSlidesByFolder.get(folder.id) ?? []}
+                                onOpen={() => setCurrentFolderId(folder.id)}
+                                onRename={handleRenameFolder(folder)}
+                                onDelete={(mode) => confirmDeleteFolder(folder, mode)}
+                                onDropCourse={(stageId) => handleMoveCourse(stageId, folder.id)}
+                              />
+                            </motion.div>
+                          ))}
+
+                        {visibleClassrooms.map((classroom, i) => (
+                          <motion.div
+                            key={classroom.id}
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
+                          >
+                            <ClassroomCard
+                              classroom={classroom}
+                              slide={thumbnails[classroom.id]}
+                              formatDate={formatDate}
+                              onDelete={handleDelete}
+                              onRename={handleRename}
+                              confirmingDelete={pendingDeleteId === classroom.id}
+                              onConfirmDelete={() => confirmDelete(classroom.id)}
+                              onCancelDelete={() => setPendingDeleteId(null)}
+                              onClick={() => {
+                                if (!session) {
+                                  router.push(`/login?callbackUrl=/classroom/${classroom.id}`);
+                                  return;
+                                }
+                                router.push(`/classroom/${classroom.id}`);
+                              }}
+                              overlay={
+                                <>
+                                  <MoveToFolderMenu
+                                    folders={folders}
+                                    currentFolderId={classroom.folderId}
+                                    onMove={(folderId) => handleMoveCourse(classroom.id, folderId)}
+                                    onCreateAndMove={handleCreateAndMove(classroom.id)}
+                                  />
+                                  {isSearching && classroom.folderId && (
+                                    <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
+                                      <Folder className="size-2.5" />
+                                      {folderNameById.get(classroom.folderId) ?? ''}
+                                    </span>
+                                  )}
+                                </>
+                              }
+                            />
+                          </motion.div>
+                        ))}
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
 
       {/* ═══ Background Decor ═══ */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
@@ -518,11 +1119,19 @@ function HomePage() {
         <div className="absolute inset-0 bg-linear-to-b from-transparent via-white/40 to-white dark:via-slate-950/40 dark:to-slate-950" />
       </div>
 
+      <NewFolderDialog
+        open={newFolderOpen}
+        onOpenChange={(open) => {
+          setNewFolderOpen(open);
+          if (!open) setCreateAndMoveTarget(null);
+        }}
+        folders={folders}
+        onCreate={handleCreateFolder}
+      />
+
       {/* ── Features & Use Cases ── */}
       <FeaturesSection />
       <UseCasesSection />
-
-
       <Footer />
     </div>
   );
@@ -620,8 +1229,8 @@ function GreetingBar() {
         <PopoverTrigger asChild>
           <div
             className={cn(
-              "flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]",
-              open && "bg-muted/60"
+              'flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]',
+              open && 'bg-muted/60'
             )}
           >
             <div className="shrink-0 relative">
@@ -722,55 +1331,50 @@ function GreetingBar() {
                           className="flex-1 min-w-0 h-6 bg-transparent border-b border-border/80 text-[13px] font-semibold text-foreground outline-none placeholder:text-muted-foreground/40"
                         />
                         <button
-                          onClick={commitName}
-                          className="shrink-0 size-5 rounded flex items-center justify-center text-violet-500 hover:bg-violet-100 dark:hover:bg-violet-900/30"
+                          className="size-5 rounded flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-muted/80 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            commitName();
+                          }}
                         >
                           <Check className="size-3" />
                         </button>
                       </div>
                     ) : (
-                      <span
+                      <div
+                        className="group/name flex items-center gap-1 cursor-pointer"
                         onClick={(e) => {
                           e.stopPropagation();
                           startEditName();
                         }}
-                        className="group/name inline-flex items-center gap-1 cursor-pointer"
                       >
-                        <span className="text-[13px] font-semibold text-foreground/85 group-hover/name:text-foreground transition-colors">
+                        <span className="text-[13px] font-semibold text-foreground truncate">
                           {displayName}
                         </span>
-                        <Pencil className="size-2.5 text-muted-foreground/30 opacity-0 group-hover/name:opacity-100 transition-opacity" />
-                      </span>
+                        <Pencil className="size-2.5 text-muted-foreground/40 opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                      </div>
                     )}
                   </div>
-
-                  {/* Collapse arrow */}
-                  <motion.div
-                    initial={{ opacity: 0, y: -2 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="shrink-0 size-6 rounded-full flex items-center justify-center hover:bg-black/4 dark:hover:bg-white/6 transition-colors"
-                  >
-                    <ChevronUp className="size-3.5 text-muted-foreground/50" />
-                  </motion.div>
                 </div>
 
-                {/* ── Expandable content ── */}
-                <div className="pt-2" onClick={(e) => e.stopPropagation()}>
-                  {/* Avatar picker */}
+                <div className="mt-3">
                   <AnimatePresence>
                     {avatarPickerOpen && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.15, ease: 'easeInOut' }}
-                        className="overflow-hidden"
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden mb-2"
                       >
-                        <div className="p-1 pb-2.5 flex items-center gap-1.5 flex-wrap">
+                        <div className="p-2 rounded-xl bg-muted/40 grid grid-cols-5 gap-1.5 justify-items-center">
                           {AVATAR_OPTIONS.map((url) => (
                             <button
                               key={url}
-                              onClick={() => setAvatar(url)}
+                              onClick={() => {
+                                setAvatar(url);
+                                setAvatarPickerOpen(false);
+                              }}
                               className={cn(
                                 'size-7 rounded-full overflow-hidden bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
                                 'hover:scale-110 active:scale-95',
@@ -835,7 +1439,9 @@ function ClassroomCard({
   classroom,
   slide,
   formatDate,
+  overlay,
   onDelete,
+  onRename,
   confirmingDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -844,7 +1450,9 @@ function ClassroomCard({
   classroom: StageListItem;
   slide?: Slide;
   formatDate: (ts: number) => string;
+  overlay?: React.ReactNode;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onRename: (id: string, newName: string) => void;
   confirmingDelete: boolean;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
@@ -853,6 +1461,9 @@ function ClassroomCard({
   const { t } = useI18n();
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = thumbRef.current;
@@ -864,29 +1475,130 @@ function ClassroomCard({
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (editing) nameInputRef.current?.focus();
+  }, [editing]);
+
+  const isTaskEngineMode = classroom.taskEngineMode === true;
+  const showModeBadge = classroom.interactiveMode || isTaskEngineMode;
+  const ModeBadgeIcon = isTaskEngineMode ? Sparkles : Atom;
+  const modeBadgeLabel = isTaskEngineMode ? 'Vocational Mode' : t('toolbar.interactiveModeLabel');
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNameDraft(classroom.name);
+    setEditing(true);
+  };
+
+  const commitRename = () => {
+    if (!editing) return;
+    const trimmed = nameDraft.trim();
+    if (trimmed && trimmed !== classroom.name) {
+      onRename(classroom.id, trimmed);
+    }
+    setEditing(false);
+  };
+
   return (
-    <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
+    <div
+      className="group cursor-pointer"
+      onClick={confirmingDelete ? undefined : onClick}
+      draggable={!confirmingDelete && !editing}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/stage-id', classroom.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={() => {
+        window.dispatchEvent(new CustomEvent('course-drag-end'));
+      }}
+    >
       <div
         ref={thumbRef}
         className="relative w-full aspect-video rounded-[24px] bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-all duration-500 group-hover:scale-[1.03]"
       >
         {slide && thumbWidth > 0 ? (
-          <ThumbnailSlide slide={slide} size={thumbWidth} viewportSize={slide.viewportSize ?? 1000} viewportRatio={slide.viewportRatio ?? 0.5625} />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-200 dark:bg-slate-800 text-2xl">📄</div>
+          <SlideThumbnail
+            slide={slide}
+            size={thumbWidth}
+            viewportSize={slide.viewportSize ?? 1000}
+            viewportRatio={slide.viewportRatio ?? 0.5625}
+          />
+        ) : !slide ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="size-12 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/30 dark:to-blue-900/30 flex items-center justify-center">
+              <span className="text-xl opacity-50">📄</span>
+            </div>
+          </div>
+        ) : null}
+
+        {showModeBadge && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                aria-label={modeBadgeLabel}
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  'absolute bottom-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm shadow-sm z-10',
+                  isTaskEngineMode
+                    ? 'text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/35'
+                    : 'text-cyan-600 dark:text-cyan-300 ring-1 ring-cyan-500/30',
+                )}
+              >
+                <ModeBadgeIcon className="size-3" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              align="start"
+              sideOffset={-4}
+              collisionPadding={0}
+              className="text-xs"
+            >
+              {modeBadgeLabel}
+            </TooltipContent>
+          </Tooltip>
         )}
-        {!confirmingDelete && (
-          <Button
-            size="icon" variant="ghost" className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 bg-black/20 text-white"
-            onClick={(e) => onDelete(classroom.id, e)}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        )}
+
+        {/* Delete & Rename — top-right, only on hover */}
+        <AnimatePresence>
+          {!confirmingDelete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <Button
+                size="icon"
+                variant="ghost"
+                className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-destructive/80 text-white hover:text-white backdrop-blur-sm rounded-full"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(classroom.id, e);
+                }}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="absolute top-2 right-11 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm rounded-full"
+                onClick={startRename}
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+              {overlay}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Inline delete confirmation overlay */}
         <AnimatePresence>
           {confirmingDelete && (
             <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2"
               onClick={(e) => e.stopPropagation()}
             >
@@ -899,14 +1611,59 @@ function ClassroomCard({
           )}
         </AnimatePresence>
       </div>
-      <div className="mt-2 text-sm">
-        <div className="font-bold flex items-center gap-2">
-           <span className="shrink-0 whitespace-nowrap text-[11px] px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400">
-             {classroom.sceneCount} {t('classroom.slides')}
-           </span>
-           <span className="truncate">{classroom.name}</span>
-        </div>
-        <div className="text-[10px] text-muted-foreground mt-1">{formatDate(classroom.updatedAt)}</div>
+
+      {/* Info — outside the thumbnail */}
+      <div className="mt-2.5 px-1 flex items-center gap-2">
+        <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
+          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
+        </span>
+        {editing ? (
+          <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={nameInputRef}
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              onBlur={commitRename}
+              maxLength={100}
+              placeholder={t('classroom.renamePlaceholder')}
+              className="w-full bg-transparent border-b border-violet-400/60 text-[15px] font-medium text-foreground/90 outline-none placeholder:text-muted-foreground/40"
+            />
+          </div>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p
+                className="font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
+                onDoubleClick={startRename}
+              >
+                {classroom.name}
+              </p>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              sideOffset={4}
+              className="!max-w-[min(90vw,32rem)] break-words whitespace-normal"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="break-all">{classroom.name}</span>
+                <button
+                  className="shrink-0 p-0.5 rounded hover:bg-foreground/10 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(classroom.name);
+                    toast.success(t('classroom.nameCopied'));
+                  }}
+                >
+                  <Copy className="size-3 opacity-60" />
+                </button>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </div>
   );

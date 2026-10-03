@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { Volume2, Play, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -16,11 +16,29 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { getTTSVoices } from '@/lib/audio/constants';
+import { getTTSVoices, isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import {
+  getVoxCPMProviderOptions,
+  getVoxCPMVoiceOptions,
+  useAllVoiceProfiles,
+} from '@/lib/audio/voxcpm-voices';
+import {
+  VOXCPM_AUTO_VOICE_ID,
+  normalizeVoxCPMBackend,
+  voxCPMBackendSupportsReferenceAudio,
+} from '@/lib/audio/voxcpm';
 
 /** Extract the English name from voice name format "ChineseName (English)" */
-function getVoiceDisplayName(name: string, lang: string): string {
+function getVoiceDisplayName(
+  id: string,
+  name: string,
+  lang: string,
+  t: (key: string) => string,
+): string {
+  if (id === VOXCPM_AUTO_VOICE_ID) {
+    return t('settings.voxcpmAutoVoice');
+  }
   if (lang === 'en-US') {
     const match = name.match(/\(([^)]+)\)/);
     return match ? match[1] : name;
@@ -38,36 +56,75 @@ export function TtsConfigPopover() {
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
+  const setTTSSpeed = useSettingsStore((s) => s.setTTSSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
-
-  const voices = getTTSVoices(ttsProviderId);
-  const localizedVoices = useMemo(
-    () =>
-      voices.map((v) => ({
-        ...v,
-        displayName: getVoiceDisplayName(v.name, locale),
-      })),
-    [voices, locale],
+  const { profiles: voiceProfiles } = useAllVoiceProfiles();
+  const voxcpmProfiles = voiceProfiles.filter((profile) => profile.providerId === 'voxcpm-tts');
+  const qwenProfiles = voiceProfiles.filter((profile) => profile.providerId === 'qwen-tts');
+  const voxcpmBackend = normalizeVoxCPMBackend(
+    ttsProvidersConfig['voxcpm-tts']?.providerOptions?.backend,
   );
+
+  const voices =
+    ttsProviderId === 'voxcpm-tts'
+      ? getVoxCPMVoiceOptions(voxcpmProfiles, {
+          supportsClone: voxCPMBackendSupportsReferenceAudio(voxcpmBackend),
+        })
+      : ttsProviderId === 'qwen-tts'
+        ? [
+            ...getTTSVoices(ttsProviderId),
+            ...qwenProfiles.map((profile) => ({
+              id: profile.id,
+              name: profile.name,
+              language: 'auto',
+              gender: 'neutral' as const,
+            })),
+          ]
+        : getTTSVoices(ttsProviderId);
+  const localizedVoices = voices.map((voice) => ({
+    ...voice,
+    displayName: getVoiceDisplayName(voice.id, voice.name, locale, t),
+  }));
 
   const pillCls =
     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
+  const canPreview = ttsProviderId !== 'voxcpm-tts' || ttsVoice !== VOXCPM_AUTO_VOICE_ID;
+  const usesQwenClone = ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice);
+
+  const handleVoiceChange = (voiceId: string) => {
+    setTTSVoice(voiceId);
+  };
 
   const handlePreview = useCallback(async () => {
     if (previewing) {
       stopPreview();
       return;
     }
+    if (!canPreview) {
+      toast.info(t('settings.voxcpmAutoVoiceNoPreview'));
+      return;
+    }
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
+      const providerOptions =
+        ttsProviderId === 'voxcpm-tts'
+          ? {
+              ...(providerConfig?.providerOptions || {}),
+              ...(await getVoxCPMProviderOptions(ttsVoice, { role: 'teacher', locale })),
+            }
+          : undefined;
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
+        modelId: resolveTTSModelForVoice(ttsProviderId, ttsVoice, providerConfig?.modelId),
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
-        baseUrl: providerConfig?.baseUrl,
+        // Managed providers resolve their base URL server-side; only send the
+        // client's own base URL (custom providers).
+        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
+        providerOptions,
       });
     } catch (error) {
       const message =
@@ -76,9 +133,11 @@ export function TtsConfigPopover() {
     }
   }, [
     previewing,
+    canPreview,
     startPreview,
     stopPreview,
     t,
+    locale,
     ttsProviderId,
     ttsProvidersConfig,
     ttsSpeed,
@@ -119,7 +178,7 @@ export function TtsConfigPopover() {
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.ttsHint')}</TooltipContent>
       </Tooltip>
-      <PopoverContent align="start" className="w-[280px] p-0">
+      <PopoverContent align="start" className="w-[280px] max-w-[calc(100vw-2rem)] p-0">
         {/* Header with toggle */}
         <div className="flex items-center gap-2.5 px-3.5 py-3 border-b border-border/40">
           <Volume2
@@ -145,7 +204,7 @@ export function TtsConfigPopover() {
           <div className="px-3.5 py-3 space-y-3">
             {/* Voice + Preview row */}
             <div className="flex items-center gap-2">
-              <Select value={ttsVoice} onValueChange={setTTSVoice}>
+              <Select value={ttsVoice} onValueChange={handleVoiceChange}>
                 <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
                   <SelectValue />
                 </SelectTrigger>
@@ -159,8 +218,10 @@ export function TtsConfigPopover() {
               </Select>
               <button
                 onClick={handlePreview}
+                disabled={!canPreview}
                 className={cn(
                   'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
+                  !canPreview && 'cursor-not-allowed opacity-50',
                   previewing
                     ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
                     : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -174,6 +235,28 @@ export function TtsConfigPopover() {
                 {previewing ? t('toolbar.ttsPreviewing') : t('toolbar.ttsPreview')}
               </button>
             </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{t('settings.ttsSpeed')}</span>
+                <span>{usesQwenClone ? '1×' : `${ttsSpeed.toFixed(2)}×`}</span>
+              </div>
+              <input
+                aria-label={t('settings.ttsSpeed')}
+                type="range"
+                min={0.5}
+                max={2}
+                step={0.05}
+                value={usesQwenClone ? 1 : ttsSpeed}
+                disabled={usesQwenClone}
+                onChange={(event) => setTTSSpeed(Number(event.target.value))}
+                className="w-full disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            {usesQwenClone && (
+              <p className="text-[11px] text-muted-foreground">
+                {t('settings.qwenCloneSpeedHint')}
+              </p>
+            )}
           </div>
         )}
       </PopoverContent>

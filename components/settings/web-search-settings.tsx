@@ -3,11 +3,24 @@
 import { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
-import type { WebSearchProviderId } from '@/lib/web-search/types';
-import { Eye, EyeOff } from 'lucide-react';
+import {
+  BAIDU_SUB_SOURCES,
+  CLAUDE_WEB_SEARCH_DEFAULT_MODEL,
+  CLAUDE_WEB_SEARCH_MODELS,
+  WEB_SEARCH_PROVIDERS,
+} from '@/lib/web-search/constants';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import { ExternalLink, Eye, EyeOff } from 'lucide-react';
 
 interface WebSearchSettingsProps {
   selectedProviderId: WebSearchProviderId;
@@ -19,9 +32,21 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
 
   const webSearchProvidersConfig = useSettingsStore((state) => state.webSearchProvidersConfig);
   const setWebSearchProviderConfig = useSettingsStore((state) => state.setWebSearchProviderConfig);
+  const baiduSubSources = useSettingsStore((state) => state.baiduSubSources);
+  const setBaiduSubSources = useSettingsStore((state) => state.setBaiduSubSources);
 
   const provider = WEB_SEARCH_PROVIDERS[selectedProviderId];
   const isServerConfigured = !!webSearchProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const isOperatorManagedBaseUrl = selectedProviderId === 'searxng';
+  // Managed providers are admin-owned: hide the key/base-URL override inputs.
+  const showCredentialFields = !isServerConfigured && !isOperatorManagedBaseUrl;
+
+  const buildRequestUrl = (baseUrl: string) => {
+    const trimmed = baseUrl.replace(/\/$/, '');
+    if (!provider.endpointPath) return trimmed;
+    if (trimmed.endsWith(provider.endpointPath)) return trimmed;
+    return `${trimmed}${provider.endpointPath}`;
+  };
 
   // Reset showApiKey when provider changes (derived state pattern)
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
@@ -39,8 +64,20 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
         </div>
       )}
 
+      {isOperatorManagedBaseUrl && !isServerConfigured && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
+          {t('settings.searxngServerOnlyNotice')}
+        </div>
+      )}
+
+      {!provider.requiresApiKey && !isServerConfigured && !isOperatorManagedBaseUrl && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
+          {t('settings.webSearchApiKeyOptional')}
+        </div>
+      )}
+
       {/* API Key + Base URL Configuration */}
-      {(provider.requiresApiKey || isServerConfigured) && (
+      {showCredentialFields && (
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -54,7 +91,9 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
                   autoCorrect="off"
                   spellCheck={false}
                   placeholder={
-                    isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
+                    !provider.requiresApiKey
+                      ? t('settings.optionalOverride')
+                      : t('settings.enterApiKey')
                   }
                   value={webSearchProvidersConfig[selectedProviderId]?.apiKey || ''}
                   onChange={(e) =>
@@ -83,7 +122,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder={provider.defaultBaseUrl || 'https://api.tavily.com'}
+                placeholder={provider.defaultBaseUrl || ''}
                 value={webSearchProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
                   setWebSearchProviderConfig(selectedProviderId, {
@@ -102,7 +141,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
               provider.defaultBaseUrl ||
               '';
             if (!effectiveBaseUrl) return null;
-            const fullUrl = effectiveBaseUrl + '/search';
+            const fullUrl = buildRequestUrl(effectiveBaseUrl);
             return (
               <p className="text-xs text-muted-foreground break-all">
                 {t('settings.requestUrl')}: {fullUrl}
@@ -110,6 +149,80 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
             );
           })()}
         </>
+      )}
+
+      {/* Claude search model — hidden for managed providers, where the
+          operator pins the model via WEB_SEARCH_CLAUDE_MODELS */}
+      {selectedProviderId === 'claude' && !isServerConfigured && (
+        <div className="space-y-2">
+          <Label className="text-sm">{t('settings.claudeSearchModel')}</Label>
+          <Select
+            value={webSearchProvidersConfig.claude?.modelId || CLAUDE_WEB_SEARCH_DEFAULT_MODEL}
+            onValueChange={(value) => setWebSearchProviderConfig('claude', { modelId: value })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CLAUDE_WEB_SEARCH_MODELS.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t('settings.claudeSearchModelHint')}</p>
+        </div>
+      )}
+
+      {selectedProviderId === 'baidu' && (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-sm">{t('settings.baiduSubSources')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t('settings.baiduSubSourcesDescription')}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {(
+              Object.entries(BAIDU_SUB_SOURCES) as Array<
+                [keyof BaiduSubSources, (typeof BAIDU_SUB_SOURCES)[keyof typeof BAIDU_SUB_SOURCES]]
+              >
+            ).map(([key, meta]) => {
+              const enabled = baiduSubSources[key];
+              return (
+                <div
+                  key={key}
+                  className="flex items-center justify-between gap-4 rounded-md border px-3 py-2"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-sm font-medium">{t(meta.labelKey)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t(meta.descriptionKey)}
+                      {meta.docsUrl && (
+                        <a
+                          href={meta.docsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 ml-1.5 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                        >
+                          {t('settings.viewDocs')}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={(checked) => setBaiduSubSources({ [key]: checked })}
+                    aria-label={t(meta.labelKey)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );

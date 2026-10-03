@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { Play, Pause, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { DISCUSSION_AUTO_SKIP_MS } from '@/lib/choreography';
 import type { DiscussionAction } from '@/lib/types/action';
 
 interface ProactiveCardProps {
@@ -14,6 +15,9 @@ interface ProactiveCardProps {
   anchorRef: React.RefObject<HTMLElement | null>;
   /** Where the card prefers to align relative to the anchor */
   align?: 'left' | 'right';
+  /** Portal target — defaults to document.body. Pass the fullscreen container
+   *  when in presentation mode so the card stays visible inside the top-layer. */
+  portalContainer?: HTMLElement | null;
   agentName?: string;
   agentAvatar?: string;
   agentColor?: string;
@@ -36,6 +40,7 @@ export const ProactiveCard = ({
   mode,
   anchorRef,
   align = 'right',
+  portalContainer,
   agentName,
   agentAvatar,
   agentColor,
@@ -88,7 +93,7 @@ export const ProactiveCard = ({
   useEffect(() => {
     if (mode !== 'playback') return;
 
-    const duration = 5000;
+    const duration = DISCUSSION_AUTO_SKIP_MS;
     const interval = 50;
     const step = (interval / duration) * 100;
 
@@ -197,7 +202,7 @@ export const ProactiveCard = ({
                 isPaused ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'
               }`}
             >
-              {Math.max(0, Math.ceil((progress / 100) * 5))}s
+              {Math.max(0, Math.ceil((progress / 100) * (DISCUSSION_AUTO_SKIP_MS / 1000)))}s
             </span>
           </div>
 
@@ -240,5 +245,5 @@ export const ProactiveCard = ({
     </motion.div>
   );
 
-  return createPortal(card, document.body);
+  return createPortal(card, portalContainer || document.body);
 };

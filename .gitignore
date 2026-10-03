@@ -19,6 +19,12 @@ CLAUDE.local.md
 # testing
 /coverage
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # next.js
 /.next/
 /out/
@@ -26,6 +32,9 @@ CLAUDE.local.md
 # production
 /build
 /dist
+
+# generated: synced from packages/@openmaic/importer/dist for runtime URL import
+/public/vendor/maic-importer
 
 # misc
 .DS_Store
@@ -64,7 +73,23 @@ next-env.d.ts
 
 # docs
 /docs
-
 gcs-service-account.json
 classbyai-firebase.json
 .env.example
+
+# Eval results
+eval/whiteboard-layout/results/
+eval/outline-language/results/
+eval/orchestration/results/
+eval/orchestration/results-answering/
+eval/orchestration/results-answer-content/
+
+# e2e screenshot artifacts
+e2e/screenshots/
+
+# local-only sandbox/demo pages (do not ship)
+/app/slide-renderer-demo
+
+# local e2e screenshots for #619 review
+e2e/__screenshots-619/
+/.playwright-mcp/

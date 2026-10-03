@@ -6,7 +6,7 @@ import type {
   ScatterSeriesOption,
   RadarSeriesOption,
 } from 'echarts/charts';
-import type { ChartData, ChartType } from '@/lib/types/slides';
+import type { ChartData, ChartType } from '@openmaic/dsl';
 
 type EChartOption = ComposeOption<
   BarSeriesOption | LineSeriesOption | PieSeriesOption | ScatterSeriesOption | RadarSeriesOption
@@ -45,11 +45,10 @@ export const getChartOption = ({
       }
     : undefined;
 
-  const axisLabel = textColor
-    ? {
-        color: textColor,
-      }
-    : undefined;
+  const axisLabel = {
+    show: true,
+    color: textColor ?? '#333333',
+  };
 
   const splitLine = lineColor
     ? {
@@ -58,6 +57,15 @@ export const getChartOption = ({
         },
       }
     : {};
+
+  // Defensive check: ensure series is a non-empty array before processing
+  if (!Array.isArray(data?.series) || data.series.length === 0 || !Array.isArray(data.labels)) {
+    return null;
+  }
+  const categoryAxisLabel = {
+    ...axisLabel,
+    interval: data.labels.length <= 8 ? 0 : ('auto' as const),
+  };
 
   const legend =
     data.series.length > 1
@@ -76,7 +84,7 @@ export const getChartOption = ({
         type: 'category',
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       yAxis: {
         type: 'value',
@@ -110,7 +118,7 @@ export const getChartOption = ({
         type: 'category',
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       xAxis: {
         type: 'value',
@@ -144,7 +152,7 @@ export const getChartOption = ({
         type: 'category',
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       yAxis: {
         type: 'value',
@@ -168,6 +176,8 @@ export const getChartOption = ({
     };
   }
   if (type === 'pie') {
+    const series0 = data.series[0];
+    if (!Array.isArray(series0)) return null;
     return {
       color: themeColors,
       textStyle,
@@ -177,7 +187,7 @@ export const getChartOption = ({
       },
       series: [
         {
-          data: data.series[0].map((item, index) => ({
+          data: series0.map((item, index) => ({
             value: item,
             name: data.labels[index],
           })),
@@ -205,6 +215,8 @@ export const getChartOption = ({
     };
   }
   if (type === 'ring') {
+    const series0 = data.series[0];
+    if (!Array.isArray(series0)) return null;
     return {
       color: themeColors,
       textStyle,
@@ -214,7 +226,7 @@ export const getChartOption = ({
       },
       series: [
         {
-          data: data.series[0].map((item, index) => ({
+          data: series0.map((item, index) => ({
             value: item,
             name: data.labels[index],
           })),
@@ -251,7 +263,7 @@ export const getChartOption = ({
         boundaryGap: false,
         data: data.labels,
         axisLine,
-        axisLabel,
+        axisLabel: categoryAxisLabel,
       },
       yAxis: {
         type: 'value',
@@ -309,10 +321,12 @@ export const getChartOption = ({
     };
   }
   if (type === 'scatter') {
+    const series0 = data.series[0];
+    if (!Array.isArray(series0)) return null;
     const formatedData = [];
-    for (let i = 0; i < data.series[0].length; i++) {
-      const x = data.series[0][i];
-      const y = data.series[1] ? data.series[1][i] : x;
+    for (let i = 0; i < series0.length; i++) {
+      const x = series0[i];
+      const y = data.series[1]?.[i] ?? x;
       formatedData.push([x, y]);
     }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { ElementTypes, type PPTElement } from '@/lib/types/slides';
+import { ElementTypes, type PPTElement } from '@openmaic/dsl';
 import { useMemo } from 'react';
 
 import { BaseImageElement } from '../components/element/ImageElement/BaseImageElement';
@@ -11,8 +11,10 @@ import { BaseChartElement } from '../components/element/ChartElement/BaseChartEl
 import { BaseLatexElement } from '../components/element/LatexElement/BaseLatexElement';
 import { BaseTableElement } from '../components/element/TableElement/BaseTableElement';
 import { BaseVideoElement } from '../components/element/VideoElement/BaseVideoElement';
+import { BaseCodeElement } from '../components/element/CodeElement/BaseCodeElement';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import type { SceneContent } from '@/lib/types/stage';
+import { maicElementIdAttributes, screenElementDomId } from '../element-dom';
 
 interface ScreenElementProps {
   readonly elementInfo: PPTElement;
@@ -32,6 +34,7 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
       [ElementTypes.LATEX]: BaseLatexElement,
       [ElementTypes.TABLE]: BaseTableElement,
       [ElementTypes.VIDEO]: BaseVideoElement,
+      [ElementTypes.CODE]: BaseCodeElement,
       // TODO: Add other element types
       // [ElementTypes.AUDIO]: BaseAudioElement,
     };
@@ -57,7 +60,8 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
   return (
     <div
       className="screen-element"
-      id={`screen-element-${elementInfo.id}`}
+      id={screenElementDomId(elementInfo.id)}
+      {...maicElementIdAttributes(elementInfo.id)}
       style={{
         zIndex: elementIndex,
         color: theme.fontColor,

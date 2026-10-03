@@ -1,22 +1,26 @@
 /**
  * Image Storage Utilities - Use Cloud Storage
  *
- * Store images in Cloud Storage instead of local IndexedDB.
+ * Store PDF images in IndexedDB and Cloud Storage.
  */
 
 import { 
   uploadToCloudStorage, 
   deleteFromCloudStorage 
 } from './cloud-storage';
-import { nanoid } from 'nanoid';
+import { db, type ImageFileRecord } from '@/lib/device-storage/database';import { nanoid } from 'nanoid';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ImageStorage');
+const SESSION_ID_LENGTH = 10;
 
 /**
- * Convert base64 data URL to Blob
+ * Decode a base64 data URL into its binary payload and MIME type.
  */
-function base64ToBlob(base64DataUrl: string): Blob {
+function decodeBase64DataUrl(base64DataUrl: string): {
+  buffer: ArrayBuffer;
+  mimeType: string;
+} {
   const parts = base64DataUrl.split(',');
   const mimeMatch = parts[0].match(/:(.*?);/);
   const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
@@ -29,7 +33,18 @@ function base64ToBlob(base64DataUrl: string): Blob {
     uint8Array[i] = byteString.charCodeAt(i);
   }
 
-  return new Blob([uint8Array], { type: mimeType });
+  return { buffer: arrayBuffer, mimeType };
+}
+
+/**
+ * Convert a stored binary value to the Blob expected by callers.
+ */
+function storedBinaryToBlob(value: Blob | ArrayBuffer, mimeType: string): Blob {
+  if (value instanceof ArrayBuffer) {
+    return new Blob([value], { type: mimeType });
+  }
+
+  return value.type ? value : new Blob([value], { type: mimeType });
 }
 
 /**
@@ -38,38 +53,88 @@ function base64ToBlob(base64DataUrl: string): Blob {
  */
 export async function storeImages(
   images: Array<{ id: string; src: string; pageNumber?: number }>,
-  userId: string
+  userId?: string
 ): Promise<string[]> {
-  const sessionId = nanoid(10);
-  const storedUrls: string[] = [];
+  const sessionId = nanoid(SESSION_ID_LENGTH);
+  const storedIds: string[] = [];
+  let currentImageId: string | undefined;
 
-  for (const img of images) {
-    try {
-      const blob = base64ToBlob(img.src);
-      const storagePath = `sessions/${sessionId}/${img.id}.png`;
-      
-      const downloadUrl = await uploadToCloudStorage(storagePath, blob, userId);
-      storedUrls.push(downloadUrl);
-    } catch (error) {
-      log.error(`Failed to store image ${img.id} to Storage:`, error);
+  try {
+    for (const img of images) {
+      currentImageId = img.id;
+      const { buffer, mimeType } = decodeBase64DataUrl(img.src);
+
+      // Use session-prefixed ID to allow cleanup
+      const storageId = `session_${sessionId}_${img.id}`;
+
+      const record: ImageFileRecord = {
+        id: storageId,
+        blob: buffer,
+        filename: `${img.id}.png`,
+        mimeType,
+        size: buffer.byteLength,
+        createdAt: Date.now(),
+      };
+
+      await db.imageFiles.put(record);
+      storedIds.push(storageId);
+
+      if (userId) {
+        try {
+          const blob = new Blob([buffer], { type: mimeType });
+          const storagePath = `sessions/${sessionId}/${img.id}.png`;
+          await uploadToCloudStorage(storagePath, blob, userId);
+        } catch (e) {
+          log.warn(`Could not upload image ${img.id} to cloud:`, e);
+        }
+      }
     }
+  } catch (error) {
+    await Promise.allSettled(storedIds.map((id) => db.imageFiles.delete(id)));
+    const message = `Failed to store image bundle${
+      currentImageId ? ` at image ${currentImageId}` : ''
+    }`;
+    log.error(`${message}:`, error);
+    throw new Error(message, { cause: error });
   }
 
-  return storedUrls;
+  return storedIds;
 }
 
 /**
  * Load image mapping (This might need a different approach with Storage URLs)
  * In Firebase, we usually store the URL directly in the document.
  */
-export async function loadImageMapping(imageUrls: string[]): Promise<Record<string, string>> {
+export async function loadImageMapping(imageIds: string[]): Promise<Record<string, string>> {
   const mapping: Record<string, string> = {};
-  // For now, if we have URLs, we just map them. 
-  // If the original IDs were encoded in the URL, we'd extract them.
-  imageUrls.forEach((url, index) => {
-    mapping[`img_${index + 1}`] = url;
-  });
+
+  for (const storageId of imageIds) {
+    try {
+      const record = await db.imageFiles.get(storageId);
+      if (record) {
+        const blob = storedBinaryToBlob(record.blob, record.mimeType);
+        const base64 = await blobToBase64(blob);
+        const originalId = extractOriginalImageId(storageId);
+        if (!originalId) {
+          log.warn(`Skipping image with malformed storage ID: ${storageId}`);
+          continue;
+        }
+        mapping[originalId] = base64;
+      }
+    } catch (error) {
+      log.error(`Failed to load image ${storageId}:`, error);
+    }
+  }
   return mapping;
+}
+
+/** Extract the original image ID from `session_<10-character nanoid>_<image ID>`. */
+export function extractOriginalImageId(storageId: string): string | undefined {
+  const prefixLength = 'session_'.length + SESSION_ID_LENGTH;
+  if (!storageId.startsWith('session_') || storageId[prefixLength] !== '_') return undefined;
+
+  const originalId = storageId.slice(prefixLength + 1);
+  return originalId || undefined;
 }
 
 /**
@@ -83,18 +148,74 @@ export async function cleanupSessionImages(sessionId: string, userId: string): P
 /**
  * Store a PDF file in Firebase Storage.
  */
-export async function storePdfBlob(file: File, userId: string): Promise<string> {
-  const storagePath = `pdfs/${nanoid(10)}_${file.name}`;
-  const blob = new Blob([await file.arrayBuffer()], {
-    type: file.type || 'application/pdf',
-  });
+export async function cleanupOldImages(hoursOld: number = 24): Promise<void> {
+  try {
+    const cutoff = Date.now() - hoursOld * 60 * 60 * 1000;
+    await db.imageFiles.where('createdAt').below(cutoff).delete();
+    log.info(`Cleaned up images older than ${hoursOld} hours`);
+  } catch (error) {
+    log.error('Failed to cleanup old images:', error);
+  }
+}
 
-  return await uploadToCloudStorage(storagePath, blob, userId);
+/**
+ * Get total size of stored images
+ */
+export async function getImageStorageSize(): Promise<number> {
+  const images = await db.imageFiles.toArray();
+  return images.reduce((total, img) => total + img.size, 0);
+}
+
+/**
+ * Store a PDF file as an ArrayBuffer in IndexedDB (and Cloud Storage if userId provided).
+ * Returns a storage key that callers can use to retrieve the file as a Blob.
+ */
+export async function storePdfBlob(file: File, userId?: string): Promise<string> {
+  const storageKey = `pdf_${nanoid(10)}`;
+  const buffer = await file.arrayBuffer();
+
+  const record: ImageFileRecord = {
+    id: storageKey,
+    blob: buffer,
+    filename: file.name,
+    mimeType: file.type || 'application/pdf',
+    size: buffer.byteLength,
+    createdAt: Date.now(),
+  };
+
+  await db.imageFiles.put(record);
+
+  if (userId) {
+    try {
+      const storagePath = `pdfs/${nanoid(10)}_${file.name}`;
+      const blob = new Blob([buffer], { type: file.type || 'application/pdf' });
+      await uploadToCloudStorage(storagePath, blob, userId);
+    } catch (e) {
+      log.warn('Could not upload PDF blob to cloud:', e);
+    }
+  }
+
+  return storageKey;
 }
 
 /**
  * Load a PDF Blob (In Firebase, we usually just return the URL)
  */
-export async function loadPdfBlob(url: string): Promise<Blob | string | null> {
-  return url;
+export async function loadPdfBlob(keyOrUrl: string): Promise<Blob | string | null> {
+  if (keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')) {
+    return keyOrUrl;
+  }
+  const record = await db.imageFiles.get(keyOrUrl);
+  return record ? storedBinaryToBlob(record.blob, record.mimeType) : null;
 }
+
+/**
+ * Delete a stored PDF Blob from IndexedDB by its storage key.
+ */
+export async function deletePdfBlob(key: string): Promise<void> {
+  await db.imageFiles.delete(key);
+}
+
+export const storeDocumentBlob = storePdfBlob;
+export const loadDocumentBlob = loadPdfBlob;
+export const deleteDocumentBlob = deletePdfBlob;

@@ -26,7 +26,6 @@ export interface ClassroomGenerationJob {
   completedAt?: string;
   inputSummary: {
     requirementPreview: string;
-    language: string;
     hasPdf: boolean;
     pdfTextLength: number;
     pdfImageCount: number;
@@ -37,6 +36,8 @@ export interface ClassroomGenerationJob {
     classroomId: string;
     url: string;
     scenesCount: number;
+    ttsCoverage?: GenerateClassroomResult['ttsCoverage'];
+    warning?: string;
   };
   error?: string;
 }
@@ -49,7 +50,6 @@ function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJo
   return {
     requirementPreview:
       input.requirement.length > 200 ? `${input.requirement.slice(0, 197)}...` : input.requirement,
-    language: input.language || 'zh-CN',
     hasPdf: !!input.pdfContent,
     pdfTextLength: input.pdfContent?.text.length || 0,
     pdfImageCount: input.pdfContent?.images.length || 0,
@@ -201,13 +201,15 @@ export async function markClassroomGenerationJobSucceeded(
     status: 'succeeded',
     step: 'completed',
     progress: 100,
-    message: 'Classroom generation completed',
+    message: result.warning ?? 'Classroom generation completed',
     completedAt: new Date().toISOString(),
     scenesGenerated: result.scenesCount,
     result: {
       classroomId: result.id,
       url: result.url,
       scenesCount: result.scenesCount,
+      ...(result.ttsCoverage ? { ttsCoverage: result.ttsCoverage } : {}),
+      ...(result.warning ? { warning: result.warning } : {}),
     },
   });
 }

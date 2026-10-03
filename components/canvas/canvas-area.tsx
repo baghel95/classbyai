@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,14 +11,26 @@ import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
 import type { CanvasToolbarProps } from '@/components/canvas/canvas-toolbar';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { ClassroomCompletePageConnected } from '@/components/scene-renderers/classroom-complete';
+import { ContainBox } from '@/components/edit/ContainBox';
+import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
+import type { PPTElement } from '@openmaic/dsl';
+import type { WhiteboardElementReference } from '@/lib/types/chat';
+import { SlideElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
   readonly currentScene: Scene | null;
   readonly mode: StageMode;
   readonly hideToolbar?: boolean;
   readonly isPendingScene?: boolean;
+  readonly isCourseComplete?: boolean;
   readonly isGenerationFailed?: boolean;
   readonly onRetryGeneration?: () => void;
+  readonly elementPickActive?: boolean;
+  readonly whiteboardElementReference?: WhiteboardElementReference;
+  readonly onPickWhiteboardElement?: (element: PPTElement) => void;
+  readonly onPickElement?: (element: PPTElement) => void;
+  readonly onCancelElementPick?: () => void;
 }
 
 export function CanvasArea({
@@ -28,6 +40,8 @@ export function CanvasArea({
   mode,
   engineState,
   isLiveSession,
+  isSoftClosing,
+  softCloseDeadline,
   whiteboardOpen,
   sidebarCollapsed,
   chatCollapsed,
@@ -37,14 +51,24 @@ export function CanvasArea({
   onNextSlide,
   onPlayPause,
   onWhiteboardClose,
+  isPresenting,
+  onTogglePresentation,
   showStopDiscussion,
   onStopDiscussion,
+  onContinueDiscussion,
   hideToolbar,
   isPendingScene,
+  isCourseComplete,
   isGenerationFailed,
   onRetryGeneration,
+  elementPickActive,
+  whiteboardElementReference,
+  onPickElement,
+  onPickWhiteboardElement,
+  onCancelElementPick,
 }: CanvasAreaProps) {
   const { t } = useI18n();
+  const inWorkbenchPanel = useInWorkbenchPanel();
   const showControls = mode === 'playback' && !whiteboardOpen;
   const showPlayHint =
     showControls &&
@@ -88,9 +112,11 @@ export function CanvasArea({
             : 'bg-gray-50/30 dark:bg-gray-900/30',
         )}
       >
-        <div
+        <StageViewport
+          workbench={inWorkbenchPanel}
+          interactive={currentScene?.type === 'interactive'}
           className={cn(
-            'aspect-[16/9] h-full max-h-full max-w-full bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700',
+            'bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700',
             showControls && !isLiveSession && currentScene?.type === 'slide' && 'cursor-pointer',
             currentScene?.type === 'interactive'
               ? 'shadow-blue-200/50 dark:shadow-blue-900/50 ring-1 ring-blue-900/5 dark:ring-blue-500/10'
@@ -101,7 +127,14 @@ export function CanvasArea({
           {/* Whiteboard Layer */}
           <div className="absolute inset-0 z-[110] pointer-events-none">
             <SceneProvider>
-              <Whiteboard isOpen={whiteboardOpen} onClose={onWhiteboardClose} />
+              <Whiteboard
+                isOpen={whiteboardOpen}
+                onClose={onWhiteboardClose}
+                elementPickActive={elementPickActive && whiteboardOpen}
+                whiteboardElementReference={whiteboardElementReference}
+                onPickElement={onPickWhiteboardElement}
+                onCancelElementPick={onCancelElementPick}
+              />
             </SceneProvider>
           </div>
 
@@ -114,9 +147,34 @@ export function CanvasArea({
             </div>
           )}
 
-          {/* Pending Scene Loading Overlay */}
+          {elementPickActive &&
+            !whiteboardOpen &&
+            onPickElement &&
+            onCancelElementPick &&
+            currentScene?.type === 'slide' &&
+            currentScene.content.type === 'slide' && (
+              <SlideElementPickOverlay
+                scene={currentScene}
+                onPick={onPickElement}
+                onCancel={onCancelElementPick}
+              />
+            )}
+
+          {/* Pending Scene Loading / Completion Overlay */}
           <AnimatePresence>
-            {isPendingScene && !currentScene && (
+            {isPendingScene && !currentScene && isCourseComplete && (
+              <motion.div
+                key="course-complete"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="absolute inset-0"
+              >
+                <ClassroomCompletePageConnected />
+              </motion.div>
+            )}
+            {isPendingScene && !currentScene && !isCourseComplete && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -222,7 +280,7 @@ export function CanvasArea({
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </StageViewport>
       </div>
 
       {/* ── Canvas Toolbar — in document flow, only when not merged into roundtable ── */}
@@ -237,6 +295,8 @@ export function CanvasArea({
           scenesCount={scenesCount}
           engineState={engineState}
           isLiveSession={isLiveSession}
+          isSoftClosing={isSoftClosing}
+          softCloseDeadline={softCloseDeadline}
           whiteboardOpen={whiteboardOpen}
           sidebarCollapsed={sidebarCollapsed}
           chatCollapsed={chatCollapsed}
@@ -246,10 +306,52 @@ export function CanvasArea({
           onNextSlide={onNextSlide}
           onPlayPause={onPlayPause}
           onWhiteboardClose={onWhiteboardClose}
+          isPresenting={isPresenting}
+          onTogglePresentation={onTogglePresentation}
           showStopDiscussion={showStopDiscussion}
           onStopDiscussion={onStopDiscussion}
+          onContinueDiscussion={onContinueDiscussion}
         />
       )}
     </div>
+  );
+}
+
+function StageViewport({
+  workbench,
+  interactive,
+  className,
+  onClick,
+  children,
+}: {
+  readonly workbench: boolean;
+  readonly interactive: boolean;
+  readonly className?: string;
+  readonly onClick?: (event: React.MouseEvent) => void;
+  readonly children: ReactNode;
+}) {
+  if (interactive) {
+    return (
+      <div className={cn('h-full w-full', className)} onClick={onClick}>
+        {children}
+      </div>
+    );
+  }
+  if (!workbench) {
+    return (
+      <div
+        className={cn('aspect-[16/9] h-full max-h-full max-w-full', className)}
+        onClick={onClick}
+      >
+        {children}
+      </div>
+    );
+  }
+  return (
+    <ContainBox fit="contain" className={className}>
+      <div className="relative h-full w-full" onClick={onClick}>
+        {children}
+      </div>
+    </ContainBox>
   );
 }

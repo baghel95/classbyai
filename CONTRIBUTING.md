@@ -8,11 +8,11 @@ Thank you for your interest in contributing to OpenMAIC! This guide will help yo
 | --- | --- |
 | **Bug fix** | Open a PR directly (link the issue if one exists) |
 | **Extending existing features** (e.g. adding a new model provider, new TTS engine) | Open a PR directly |
-| **New feature or architecture change** | Start a [GitHub Discussion](https://github.com/THU-MAIC/OpenMAIC/discussions) or ask in [Discord](https://discord.gg/PtZaaTbH) **before** opening a PR |
+| **New feature or architecture change** | Start a [GitHub Discussion](https://github.com/THU-MAIC/OpenMAIC/discussions) or ask in [Discord](https://discord.gg/p8Pf2r3SaG) **before** opening a PR |
 | **Design / UI change** | Discuss in a GitHub Discussion or Discord first — include mockups or screenshots |
 | **Refactor-only PR** | Not accepted unless a maintainer explicitly requests it |
 | **Documentation** | Open a PR directly |
-| **Question** | Ask in [Discord](https://discord.gg/PtZaaTbH) |
+| **Question** | Ask in [Discord](https://discord.gg/p8Pf2r3SaG) |
 
 ## Claiming Issues
 
@@ -24,8 +24,9 @@ To avoid duplicate effort, please **comment on an issue** to claim it before you
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 20.9.0
+- [Node.js](https://nodejs.org/) >= 22.19.0
 - [pnpm](https://pnpm.io/) (latest)
+- [Docker](https://docs.docker.com/get-docker/) for the local PostgreSQL database (`pnpm db:up`), or any PostgreSQL 16 you can point `DATABASE_URL` at
 - A copy of `.env.local` — see [`.env.example`](.env.example) for reference
 
 ## Getting Started
@@ -42,9 +43,19 @@ pnpm install
 cp .env.example .env.local
 # Edit .env.local with your API keys
 
-# Start the development server
+# Start the local development database (a separate PostgreSQL on 127.0.0.1:5432,
+# shared by every checkout on this machine;
+# set OPENMAIC_DB_PORT for another port), then uncomment the local
+# DATABASE_URL line in .env.local:
+#   DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+pnpm db:up
+
+# Start the development server (it refuses to start without DATABASE_URL)
 pnpm dev
 ```
+
+`pnpm db:down` stops the development database and keeps its data. The E2E
+suite (`pnpm test:e2e`) also needs `DATABASE_URL`.
 
 ## Development Workflow
 
@@ -59,6 +70,15 @@ pnpm dev
 3. Make your changes and **test locally**.
 4. Run **all CI checks** before committing (see below).
 5. Open a **Pull Request** against `main`.
+
+### Environment Variable Changes
+
+When adding or renaming an operator-facing environment variable, update
+[`.env.example`](.env.example) in the same PR. Document whether it is optional,
+its safe default or example value, and whether it is read at build time or
+runtime. Variables used only by tests, CI, or internal development scripts do
+not need to be added to the template, but their owning file or documentation
+must make that limited scope clear.
 
 ## Before You Submit a PR
 
@@ -118,6 +138,30 @@ fix(whiteboard): prevent canvas from resetting on window resize
 docs: add CONTRIBUTING.md
 ```
 
+## Changing a Published Package
+
+Four packages under `packages/@openmaic/` are published to npm: `dsl`, `storage`, `renderer`, and `importer`. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
+
+**If your PR changes a publishable file in one of those packages, bump that package's `version` in its `package.json` in the same PR.** CI enforces this, and without the bump you will see:
+
+```
+<package>: publishable package inputs changed but version did not increase
+```
+
+What counts as publishable: everything under the package directory except files that never reach the tarball, such as `docs/`, `test/`, and `vitest.config.ts`. Editing only those needs no bump. The exact set lives in `scripts/check-package-version-bumps.mjs`.
+
+Choosing the number is a [semver](https://semver.org/) judgement, and it is yours to make rather than something CI can infer:
+
+- **patch** — a fix that changes no documented behaviour
+- **minor** — new behaviour that existing consumers can ignore
+- **major** — anything an existing consumer must react to
+
+For packages below `1.0.0`, a **minor** bump signals a breaking change and a **patch** bump signals a compatible change, following common 0.x semver practice; the **major** rule applies from `1.0.0`.
+
+Be deliberate with `@openmaic/dsl`. It is the contract the other packages and downstream deployments validate against, so a change that narrows what an existing document may contain is a breaking change even when the diff looks small.
+
+You never publish anything yourself. Once your PR is merged, a version that is not yet on the registry is released automatically, and a `@openmaic/<name>@<version>` tag is written afterwards to record it. That tag is a marker, not a trigger: pushing one does not release anything.
+
 ## AI-Assisted PRs 🤖
 
 PRs built with AI tools (Codex, Claude, Cursor, etc.) are welcome! We just ask for transparency and self-review:
@@ -134,10 +178,9 @@ AI-assisted PRs are held to the same quality standard as any other PR. Community
 OpenMAIC/
 ├── app/              # Next.js app router pages and API routes
 ├── components/       # React components
-├── lib/              # Shared utilities and core logic
+├── lib/              # Shared utilities and core logic (i18n in lib/i18n/locales/)
 ├── packages/         # Internal packages (mathml2omml, pptxgenjs)
 ├── public/           # Static assets
-├── messages/         # i18n translation files
 └── .github/          # Issue templates, PR template, CI workflows
 ```
 
@@ -160,4 +203,4 @@ Please report security vulnerabilities through [GitHub Security Advisories](http
 
 ## License
 
-By contributing to OpenMAIC, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).
+By contributing to OpenMAIC, you agree that your contributions will be licensed under the [MIT License](LICENSE).

@@ -7,11 +7,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
-import type { TTSProviderId } from '@/lib/audio/types';
+import { isKnownTTSProviderId } from '@/lib/audio/constants';
+import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
-import type { AgentInfo } from '@/lib/generation/pipeline-types';
+import type { AgentInfo } from '@openmaic/generation';
 import { 
   queryFromCloud, 
   saveToCloud, 
@@ -40,6 +41,8 @@ const WHITEBOARD_ACTIONS = [
   'wb_draw_latex',
   'wb_draw_table',
   'wb_draw_line',
+  'wb_draw_code',
+  'wb_edit_code',
   'wb_clear',
   'wb_delete',
 ];
@@ -227,6 +230,15 @@ export const useAgentRegistry = create<AgentRegistryState>()(
       name: 'agent-registry-storage',
       version: 11, // Bumped: add voiceOverrides field to AgentConfig
       migrate: (persistedState: unknown) => persistedState,
+      // Generated agents are single-sourced on the stage document and rebuilt
+      // from it on every classroom load — keep them out of the localStorage
+      // snapshot entirely. The merge filter below stays as defense in depth
+      // for snapshots written before this partialize existed.
+      partialize: (state) => ({
+        agents: Object.fromEntries(
+          Object.entries(state.agents).filter(([, agent]) => !agent.isGenerated),
+        ),
+      }),
       // Merge persisted state with default agents
       // Default agents always use code-defined values (not cached)
       // Custom agents use persisted values
@@ -319,9 +331,19 @@ export function agentsToParticipants(
 }
 
 /**
- * Load generated agents for a stage from IndexedDB into the registry.
- * Clears any previously loaded generated agents first.
- * Returns the loaded agent IDs.
+ * Replace the registry's generated agents with the given stage roster.
+ *
+ * In-memory registry side effect: the persisted source of truth for the
+ * roster is `stage.generatedAgentConfigs` on the stage document, and callers
+ * persist it through the document path — the registry's own localStorage
+ * snapshot excludes generated agents (see the persist `partialize` above), so
+ * nothing written here becomes durable.
+ * Clears previously loaded generated agents first (even when the new roster is
+ * empty) so a prior classroom's roster cannot leak into the current one.
+ * The contract keeps `voiceConfig.providerId` an open string; a binding whose
+ * provider is not registered in this app is dropped here (the agent keeps its
+ * voiceDesign, and the TTS path falls back at call time).
+ * Returns the applied agent IDs.
  */
 export async function loadGeneratedAgentsForStage(stageId: string, userId: string): Promise<string[]> {
   const allRecords = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
@@ -358,7 +380,7 @@ export async function loadGeneratedAgentsForStage(stageId: string, userId: strin
 }
 
 /**
- * Save generated agents to IndexedDB and registry.
+ * Save generated agents to cloud storage and registry.
  * Clears old generated agents for this stage first.
  */
 export async function saveGeneratedAgents(
@@ -372,54 +394,70 @@ export async function saveGeneratedAgents(
     avatar: string;
     color: string;
     priority: number;
-    voiceConfig?: { providerId: string; voiceId: string };
+    voiceConfig?: { providerId: string; voiceId: string; modelId?: string };
   }>,
 ): Promise<string[]> {
-  // Clear old generated agents for this stage in Firestore
-  // Note: Firestore doesn't support where delete, we'd need to query first or use a compound key as ID
-  // Let's use stageId:agentId as compound key to make deletion easier if needed, 
-  // or just overwrite if IDs are stable.
-  
-  // For now, let's just query and delete (standard Firestore pattern for small collections)
-  const existing = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
-  const toDelete = existing.filter(a => a.stageId === stageId);
-  for (const agent of toDelete) {
-    await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id);
+  try {
+    const existing = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
+    const toDelete = existing.filter(a => a.stageId === stageId);
+    for (const agent of toDelete) {
+      await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id, userId);
+    }
+
+    const records = agents.map((a) => ({ ...a, stageId, createdAt: Date.now() }));
+    for (const record of records) {
+      await saveToCloud(GENERATED_AGENTS_COLLECTION, record.id, record, userId);
+    }
+  } catch (err) {
+    console.warn('Failed to persist generated agents to cloud:', err);
   }
 
-  // Clear from registry
+  return applyGeneratedAgentsToRegistry(stageId, agents as ReadonlyArray<GeneratedAgentConfig>);
+}
+
+export function applyGeneratedAgentsToRegistry(
+  stageId: string,
+  agents: ReadonlyArray<GeneratedAgentConfig>,
+): string[] {
   const registry = useAgentRegistry.getState();
   for (const agent of registry.listAgents()) {
     if (agent.isGenerated) registry.deleteAgent(agent.id);
   }
 
-  // Write to Firestore
-  const records = agents.map((a) => ({ ...a, stageId, createdAt: Date.now() }));
-  for (const record of records) {
-    await saveToCloud(GENERATED_AGENTS_COLLECTION, record.id, record, userId);
-  }
-
-  // Add to registry
-  for (const record of records) {
-    const { voiceConfig, ...rest } = record;
+  const now = Date.now();
+  const ids: string[] = [];
+  for (const agent of agents) {
+    const { voiceConfig, ...rest } = agent;
     registry.addAgent({
       ...rest,
-      allowedActions: getActionsForRole(record.role),
+      allowedActions: getActionsForRole(agent.role),
       isDefault: false,
       isGenerated: true,
       boundStageId: stageId,
-      createdAt: new Date(record.createdAt),
-      updatedAt: new Date(record.createdAt),
-      ...(voiceConfig
+      createdAt: new Date(now),
+      updatedAt: new Date(now),
+      ...(voiceConfig && isKnownTTSProviderId(voiceConfig.providerId)
         ? {
             voiceConfig: {
-              providerId: voiceConfig.providerId as TTSProviderId,
+              providerId: voiceConfig.providerId,
+              ...(voiceConfig.modelId ? { modelId: voiceConfig.modelId } : {}),
               voiceId: voiceConfig.voiceId,
             },
           }
         : {}),
     });
+    ids.push(agent.id);
   }
 
-  return records.map((r) => r.id);
+  // Eager warm-up: pre-register each generated agent's auto voice so the first
+  // spoken line is already stable. Same idempotent ensure as the TTS path;
+  // fire-and-forget. Dynamic import keeps this client-only dep out of the
+  // server-importable store module.
+  if (ids.length > 0 && typeof window !== 'undefined') {
+    void import('@/lib/audio/agent-voice')
+      .then((m) => m.warmUpAgentVoices(registry.listAgents().filter((a) => a.isGenerated)))
+      .catch(() => undefined);
+  }
+
+  return ids;
 }
