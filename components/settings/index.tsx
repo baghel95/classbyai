@@ -76,7 +76,7 @@ function ProviderListColumn<T extends string>({
   t: (key: string) => string;
 }) {
   return (
-    <div className="flex-shrink-0 bg-background flex flex-col" style={{ width }}>
+    <div className="shrink-0 bg-background flex flex-col" style={{ width }}>
       <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
         {providers.map((provider) => (
           <button
@@ -665,7 +665,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         <DialogDescription className="sr-only">{t('settings.description')}</DialogDescription>
         <div className="flex h-full overflow-hidden">
           {/* Left Sidebar - Navigation */}
-          <div className="flex-shrink-0 bg-muted/30 p-3 space-y-1" style={{ width: sidebarWidth }}>
+          <div className="shrink-0 bg-muted/30 p-3 space-y-1" style={{ width: sidebarWidth }}>
             <button
               onClick={() => setActiveSection('providers')}
               className={cn(
@@ -774,7 +774,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           {/* Sidebar resize handle */}
           <div
             onMouseDown={(e) => handleResizeStart(e, 'sidebar')}
-            className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+            className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
           >
             <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
           </div>
@@ -791,7 +791,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>
@@ -810,7 +810,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>
@@ -829,7 +829,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>
@@ -852,7 +852,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>
@@ -875,7 +875,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>
@@ -898,7 +898,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>
@@ -921,7 +921,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+                className="shrink-0 w-1.25 cursor-col-resize group flex justify-center"
               >
                 <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
               </div>

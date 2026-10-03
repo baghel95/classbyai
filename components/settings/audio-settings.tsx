@@ -382,7 +382,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
         >
           <div
             className={cn(
-              'absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full transition-colors duration-300',
+              'absolute left-0 top-2.5 bottom-2.5 w-0.75 rounded-full transition-colors duration-300',
               ttsEnabled ? 'bg-primary' : 'bg-muted-foreground/20',
             )}
           />
@@ -510,7 +510,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
         >
           <div
             className={cn(
-              'absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-full transition-colors duration-300',
+              'absolute left-0 top-2.5 bottom-2.5 w-0.75 rounded-full transition-colors duration-300',
               asrEnabled ? 'bg-primary' : 'bg-muted-foreground/20',
             )}
           />
@@ -697,7 +697,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                         !asrProvidersConfig[asrProviderId]?.apiKey?.trim() &&
                         !asrProvidersConfig[asrProviderId]?.isServerConfigured
                       }
-                      className="gap-2 w-[140px]"
+                      className="gap-2 w-35"
                     >
                       {isRecording ? (
                         <>
