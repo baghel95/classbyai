@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
 
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
     let availableImagesText =
-      requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+      requirements.language === 'en-IN' ? 'No images available' : 'No images available';
     let visionImages: Array<{ id: string; src: string }> | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
@@ -169,6 +169,12 @@ export async function POST(req: NextRequest) {
         '**IMPORTANT: Do NOT include any video mediaGenerations (type: "video") in the outlines. Video generation is disabled. Image generation is allowed.**';
     }
 
+    // Development: Limit number of scenes
+    const maxScenes = process.env.NEXT_PUBLIC_MAX_SCENES;
+    if (maxScenes) {
+      mediaGenerationPolicy += `\n**IMPORTANT: For development purposes, generate EXACTLY ${maxScenes} scene outlines (no more, no less).**`;
+    }
+
     // Build teacher context from agents (if available)
     const teacherContext = formatTeacherPersonaForPrompt(agents);
 
@@ -177,11 +183,11 @@ export async function POST(req: NextRequest) {
       language: requirements.language,
       pdfContent: pdfText
         ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-        : requirements.language === 'zh-CN'
-          ? '无'
+        : requirements.language === 'en-IN'
+          ? 'None'
           : 'None',
       availableImages: availableImagesText,
-      researchContext: researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+      researchContext: researchContext || (requirements.language === 'en-IN' ? 'None' : 'None'),
       mediaGenerationPolicy,
       teacherContext,
     });

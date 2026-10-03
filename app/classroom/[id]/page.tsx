@@ -19,7 +19,7 @@ export default function ClassroomDetailPage() {
   const params = useParams();
   const classroomId = params?.id as string;
 
-  const { loadFromStorage } = useStageStore();
+  const { loadFromStorage, userId } = useStageStore();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,11 +58,14 @@ export default function ClassroomDetailPage() {
         }
       }
 
+      const activeStage = useStageStore.getState().stage;
+      const currentUserId = userId || activeStage?.userId || 'anonymous';
+
       // Restore completed media generation tasks from IndexedDB
-      await useMediaGenerationStore.getState().restoreFromDB(classroomId);
+      await useMediaGenerationStore.getState().restoreFromDB(classroomId, currentUserId);
       // Restore generated agents for this stage
       const { loadGeneratedAgentsForStage } = await import('@/lib/orchestration/registry/store');
-      const agentIds = await loadGeneratedAgentsForStage(classroomId);
+      const agentIds = await loadGeneratedAgentsForStage(classroomId, currentUserId);
       if (agentIds.length > 0) {
         const { useSettingsStore } = await import('@/lib/store/settings');
         useSettingsStore.getState().setSelectedAgentIds(agentIds);
@@ -142,7 +145,8 @@ export default function ClassroomDetailPage() {
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
       generationStartedRef.current = true;
-      generateMediaForOutlines(outlines, stage.id).catch((err) => {
+      const mediaUserId = stage.userId || userId || 'anonymous';
+      generateMediaForOutlines(outlines, stage.id, mediaUserId).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }

@@ -1117,16 +1117,21 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         apiKey: effectiveApiKey,
         baseURL: effectiveBaseUrl,
       };
-      if (config.proxy) {
-        // Dynamic require to avoid bundling undici on the client side
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { ProxyAgent, fetch: undiciFetch } = require('undici');
-        const agent = new ProxyAgent(config.proxy);
-        googleOptions.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-          undiciFetch(input as string, {
-            ...(init as Record<string, unknown>),
-            dispatcher: agent,
-          }).then((r: unknown) => r as Response)) as typeof fetch;
+      if (typeof window === 'undefined' && config.proxy) {
+        try {
+          // Dynamic eval require to prevent Webpack from bundling undici into client bundles
+          // eslint-disable-next-line @typescript-eslint/no-implied-eval
+          const nodeRequire = eval('require');
+          const { ProxyAgent, fetch: undiciFetch } = nodeRequire('undici');
+          const agent = new ProxyAgent(config.proxy);
+          googleOptions.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+            undiciFetch(input as string, {
+              ...(init as Record<string, unknown>),
+              dispatcher: agent,
+            }).then((r: unknown) => r as Response)) as typeof fetch;
+        } catch (e) {
+          log.warn('Failed to load undici for proxy:', e);
+        }
       }
       const google = createGoogleGenerativeAI(googleOptions);
       model = google.chat(config.modelId);

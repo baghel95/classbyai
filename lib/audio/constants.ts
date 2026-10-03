@@ -337,6 +337,18 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['wav', 'mp3'],
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
+  'glm-tts': {
+    id: 'glm-tts',
+    name: 'GLM TTS (Zhipu)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    icon: '/logos/glm.svg',
+    voices: [
+      { id: 'cogview', name: 'CogView Standard', language: 'zh-CN', gender: 'neutral' },
+    ],
+    supportedFormats: ['wav'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
 };
 
 /**
@@ -577,6 +589,8 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'qwen-tts': 'Bodega',
   'browser-native-tts': 'default',
   'sarvam-tts': 'en-IN',
+  'glm-tts': 'cogview',
+  'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
 };
 
 /**

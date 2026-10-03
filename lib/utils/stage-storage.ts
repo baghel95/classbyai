@@ -9,6 +9,7 @@ import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { 
   saveToCloud, 
+  saveBatchToCloud,
   loadFromCloud, 
   queryFromCloud, 
   deleteFromCloud 
@@ -66,17 +67,9 @@ export async function saveStageData(
       currentSceneId: data.currentSceneId || undefined,
     }, userId);
 
-    // Save scenes to separate records
+    // Save scenes in a single atomic batch request
     if (data.scenes && data.scenes.length > 0) {
-      for (const [index, scene] of data.scenes.entries()) {
-        await saveToCloud(SCENES_COLLECTION, scene.id, {
-          ...scene,
-          stageId,
-          order: scene.order ?? index,
-          createdAt: scene.createdAt || now,
-          updatedAt: now,
-        }, userId);
-      }
+      await saveBatchToCloud(SCENES_COLLECTION, data.scenes, userId, stageId);
     }
 
     // Save chat sessions to independent collection

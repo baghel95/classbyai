@@ -90,6 +90,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'qwen-tts': t('settings.providerQwenTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+    'sarvam-tts': t('settings.providerSarvamTTS'),
   };
   return names[providerId] || providerId;
 }

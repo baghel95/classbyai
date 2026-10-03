@@ -1,5 +1,5 @@
 // Removed Firebase Firestore imports
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001/api';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('FirebaseStorage');

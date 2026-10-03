@@ -81,7 +81,9 @@ export type TTSProviderId =
   | 'azure-tts'
   | 'qwen-tts'
   | 'browser-native-tts'
-  | 'sarvam-tts';
+  | 'sarvam-tts'
+  | 'glm-tts'
+  | 'elevenlabs-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'fish-audio-tts'
 // | 'cartesia-tts'

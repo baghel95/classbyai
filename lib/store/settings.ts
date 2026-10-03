@@ -1050,9 +1050,10 @@ export const useSettingsStore = create<SettingsState>()(
               ...rest 
             } = state;
 
-            await fetch(`http://localhost:5001/api/settings`, {
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001/api';
+            await fetch(`${backendUrl}/settings`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
               body: JSON.stringify({ ...rest, userId }),
             });
             log.info('Settings synced to cloud');
@@ -1063,7 +1064,10 @@ export const useSettingsStore = create<SettingsState>()(
 
         loadSettings: async (userId: string) => {
           try {
-            const res = await fetch(`http://localhost:5001/api/settings/${userId}`);
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001/api';
+            const res = await fetch(`${backendUrl}/settings/${userId}`, {
+              headers: { 'x-user-id': userId },
+            });
             if (res.ok) {
               const cloudSettings = await res.json();
               if (cloudSettings) {

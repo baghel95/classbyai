@@ -39,8 +39,9 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'qwen-tts': t('settings.providerQwenTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+    'sarvam-tts': t('settings.providerSarvamTTS'),
   };
-  return names[providerId];
+  return names[providerId] || providerId;
 }
 
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
@@ -48,8 +49,9 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     'openai-whisper': t('settings.providerOpenAIWhisper'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
+    'sarvam-asr': t('settings.providerSarvamASR'),
   };
-  return names[providerId];
+  return names[providerId] || providerId;
 }
 
 function getLanguageName(code: string, t: (key: string) => string): string {

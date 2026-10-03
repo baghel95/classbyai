@@ -119,12 +119,13 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
   const names: Record<TTSProviderId, string> = {
     'openai-tts': t('settings.providerOpenAITTS'),
     'azure-tts': t('settings.providerAzureTTS'),
+    'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
     'sarvam-tts': t('settings.providerSarvamTTS'),
   };
-  return names[providerId];
+  return names[providerId] || providerId;
 }
 
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {

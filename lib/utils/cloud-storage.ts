@@ -1,5 +1,5 @@
 // Cloud Storage Utility for Node.js Backend
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001/api';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('CloudStorage');
@@ -81,6 +81,51 @@ export async function saveToCloud<T>(
     log.info(`Saved to backend: ${collectionName}/${id}`);
   } catch (error) {
     log.error(`Failed to save to backend (${collectionName}/${id}):`, error);
+    throw error;
+  }
+}
+
+/**
+ * Save an array of documents to backend in a single batch request
+ */
+export async function saveBatchToCloud<T>(
+  collectionName: string,
+  items: T[],
+  userId: string,
+  stageId?: string
+): Promise<void> {
+  if (!userId) {
+    log.warn(`Skipping batch save to backend: No userId provided for ${collectionName}`);
+    return;
+  }
+  if (!items || items.length === 0) return;
+
+  try {
+    const apiPath = getApiPath(collectionName);
+    const cleanedItems = items.map((item: any, index: number) =>
+      removeUndefinedFields({
+        ...item,
+        id: item.id || item._id,
+        userId,
+        ...(stageId ? { stageId } : {}),
+        order: item.order ?? index,
+        updatedAt: Date.now(),
+      })
+    );
+
+    const res = await fetch(`${API_BASE_URL}/${apiPath}/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify({ items: cleanedItems, stageId }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to batch save to backend: ${res.statusText}`);
+    }
+
+    log.info(`Batch saved to backend: ${collectionName} (${items.length} items)`);
+  } catch (error) {
+    log.error(`Failed to batch save to backend (${collectionName}):`, error);
     throw error;
   }
 }

@@ -109,6 +109,12 @@ Consider this background when designing the course. Adapt difficulty, examples, 
       '**IMPORTANT: Do NOT include any video mediaGenerations (type: "video") in the outlines. Video generation is disabled. Image generation is allowed.**';
   }
 
+  // Development: Limit number of scenes
+  const maxScenes = process.env.NEXT_PUBLIC_MAX_SCENES;
+  if (maxScenes) {
+    mediaGenerationPolicy += `\n**IMPORTANT: For development purposes, generate EXACTLY ${maxScenes} scene outlines (no more, no less).**`;
+  }
+
   // Use simplified prompt variables
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     // New simplified variables
@@ -121,7 +127,7 @@ Consider this background when designing the course. Adapt difficulty, examples, 
     userProfile: studentProfileText,
     mediaGenerationPolicy,
     researchContext:
-      options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+      options?.researchContext || (requirements.language === 'en-IN' ? 'None' : 'None'),
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
   });
@@ -135,7 +141,7 @@ Consider this background when designing the course. Adapt difficulty, examples, 
       currentStage: 1,
       overallProgress: 20,
       stageProgress: 50,
-      statusMessage: '正在分析需求，生成场景大纲...',
+      statusMessage: 'Analyzing requirements and generating scene outlines...',
       scenesGenerated: 0,
       totalScenes: 0,
     });
@@ -164,7 +170,7 @@ Consider this background when designing the course. Adapt difficulty, examples, 
       currentStage: 1,
       overallProgress: 50,
       stageProgress: 100,
-      statusMessage: `已生成 ${result.length} 个场景大纲`,
+      statusMessage: `Generated ${result.length} scene outlines`,
       scenesGenerated: 0,
       totalScenes: result.length,
     });
