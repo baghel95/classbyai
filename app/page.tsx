@@ -378,38 +378,40 @@ function HomePage() {
     }
   };
 
-  const handleRenameFolder = (folder: FolderRecord) => async (newName: string) => {
-    try {
-      const updated = await renameFolder(folder.id, newName);
-      setFolders((prev) => prev.map((f) => (f.id === folder.id ? updated : f)));
-    } catch (err) {
-      if (err instanceof FolderNameError) {
-        toast.error(t(`classroom.${err.code}`));
-      } else {
-        toast.error(t('classroom.renameFailed'));
+  const handleRenameFolder =
+    (folder: FolderRecord) =>
+    async (newName: string): Promise<string | null> => {
+      // Empty or unchanged input just exits editing without an error.
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === folder.name) return null;
+      try {
+        await renameFolder(folder.id, newName);
+        setFolders((prev) => prev.map((f) => (f.id === folder.id ? { ...f, name: trimmed } : f)));
+        return null;
+      } catch (err) {
+        if (err instanceof FolderNameError) {
+          if (err.kind === 'duplicate') return t('classroom.folderNameExists');
+          if (err.kind === 'tooLong')
+            return t('classroom.folderWidth', {
+              width: displayNameWidth(trimmed),
+              max: FOLDER_NAME_MAX_WIDTH,
+            });
+          return t('classroom.folderNameHint');
+        }
+        log.error('Failed to rename folder:', err);
+        return t('classroom.folderRenameFailed');
       }
-      throw err;
-    }
-  };
+    };
 
   const confirmDeleteFolder = async (folder: FolderRecord, mode: DeleteFolderMode) => {
     try {
       await deleteFolder(folder.id, mode);
-      setFolders((prev) => prev.filter((f) => f.id !== folder.id));
-      if (mode === 'deleteCourses') {
-        setClassrooms((prev) => prev.filter((c) => c.folderId !== folder.id));
-      } else {
-        setClassrooms((prev) =>
-          prev.map((c) => (c.folderId === folder.id ? { ...c, folderId: undefined } : c)),
-        );
-      }
-      if (currentFolderId === folder.id) {
-        setCurrentFolderId(undefined);
-      }
-      toast.success(t('classroom.folderDeleted'));
+      if (currentFolderId === folder.id) setCurrentFolderId(undefined);
     } catch (err) {
       log.error('Failed to delete folder:', err);
-      toast.error(t('classroom.deleteFailed'));
+      toast.error(t('classroom.folderDeleteFailed'));
+    } finally {
+      await Promise.all([loadFolders(), loadClassrooms()]);
     }
   };
 
@@ -441,23 +443,16 @@ function HomePage() {
   }, [classrooms]);
 
   const coverSlidesByFolder = useMemo(() => {
-    const coursesByFolder = new Map<string, StageListItem[]>();
-    for (const c of classrooms) {
-      if (c.folderId) {
-        const arr = coursesByFolder.get(c.folderId) ?? [];
-        arr.push(c);
-        coursesByFolder.set(c.folderId, arr);
-      }
+    const byFolder = new Map<string, Slide[]>();
+    for (const c of [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
+      if (!c.folderId) continue;
+      const slide = thumbnails[c.id];
+      if (!slide) continue;
+      const list = byFolder.get(c.folderId) ?? [];
+      if (list.length < 3) list.push(slide);
+      byFolder.set(c.folderId, list);
     }
-    const map = new Map<string, (Slide | undefined)[]>();
-    for (const [folderId, courses] of coursesByFolder) {
-      courses.sort((a, b) => b.updatedAt - a.updatedAt);
-      map.set(
-        folderId,
-        courses.slice(0, 3).map((c) => thumbnails[c.id]),
-      );
-    }
-    return map;
+    return byFolder;
   }, [classrooms, thumbnails]);
 
   const folderNameById = useMemo(() => {
@@ -557,7 +552,6 @@ function HomePage() {
       const requirements: UserRequirements = {
         requirement: form.requirement,
         language: form.language,
-        userAvatar: userProfile.avatar || undefined,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: useSettingsStore.getState().webSearchEnabled || undefined,

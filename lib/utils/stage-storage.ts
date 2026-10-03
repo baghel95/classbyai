@@ -19,7 +19,6 @@ import {
   PLAYBACK_COLLECTION,
   GENERATED_AGENTS_COLLECTION,
 } from './cloud-storage';
-import { clearPlaybackState } from './playback-storage';
 import { db } from '@/lib/device-storage/database';
 import type { FolderRecord } from '@/lib/types/folder';
 import { FolderNameError } from './folder-name-validation';
@@ -539,11 +538,11 @@ export async function loadStageData(stageId: string, userId?: string): Promise<S
     };
   } catch (error) {
     log.error('Failed to load stage:', error);
-    // Corrupt or future-versioned destinations must never masquerade as missing.    throw error;
+    // Corrupt or future-versioned destinations must never masquerade as missing.
+    throw error;
   }
 }
 
-/**
 /**
  * In-flight deletions, keyed by stage id. `deleteStageData` is single-flight
  * per stage: a concurrent second call joins the first cascade instead of
@@ -554,7 +553,25 @@ export async function loadStageData(stageId: string, userId?: string): Promise<S
 const inFlightStageDeletions = new Map<string, Promise<void>>();
 
 /**
- * Delete stage and all related data from Cloud and DocumentStore.
+ * Delete stage and all related data. Single-flight per stage: concurrent
+ * calls for the same id share one cascade (and its outcome).
+ *
+ * A joined call carries its own deletion intent, not just an interest in the
+ * first cascade's outcome. If a same-id restore (server copy, backup import)
+ * recreates the document while the first cascade runs, that cascade's success
+ * describes the PRE-restore document — reporting it as-is would tell the
+ * joined caller "deleted" while the restored document survives. So when the
+ * first cascade fulfills but the stage is no longer marked deleted at join
+ * resolution, one fresh cascade runs for the restored document and the joined
+ * caller reports THAT outcome. Exactly one re-check per call, not a loop: if
+ * yet another restore lands inside the re-run's own window, the re-run's
+ * outcome is returned as-is — every later delete is a new `deleteStageData`
+ * call with its own re-check, so repeated restore/delete races converge on
+ * fresh calls instead of recursing here. A REJECTED first cascade propagates
+ * unchanged to every joined caller even though failure also leaves the stage
+ * unmarked: failure already reports "nothing was deleted" truthfully (and the
+ * pending-dirt restore has run), and re-running would turn an error report
+ * into a hidden retry.
  */
 export async function deleteStageData(stageId: string, userId?: string): Promise<void> {
   if (userId) {
@@ -566,14 +583,13 @@ export async function deleteStageData(stageId: string, userId?: string): Promise
         await deleteFromCloud(SCENES_COLLECTION, scene.id);
       }
       await deleteChatSessions(stageId, userId);
-      await clearPlaybackState(stageId);
       await deleteStageOutlines(stageId);
       const agents = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
       const stageAgents = agents.filter(a => a.stageId === stageId);
       for (const agent of stageAgents) {
         await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id);
       }
-      log.info(`Deleted stage from Cloud: ${stageId}`);
+      log.info();
     } catch (error) {
       log.error('Failed to delete stage from Cloud:', error);
     }
@@ -583,10 +599,185 @@ export async function deleteStageData(stageId: string, userId?: string): Promise
   if (!existing) return runSingleFlightStageDeletion(stageId);
   return existing.then(() => {
     if (isStageDeleted(stageId)) return;
+    // Restored mid-cascade: the joined intent targets the restored document.
+    // If several joined callers re-check in the same resolution turn, the
+    // first re-run's map entry is already visible to the rest, so they join
+    // it below rather than fanning out into parallel cascades.
     return runSingleFlightStageDeletion(stageId);
   });
 }
 
+function runSingleFlightStageDeletion(stageId: string): Promise<void> {
+  const existing = inFlightStageDeletions.get(stageId);
+  if (existing) return existing;
+  const run = performStageDeletion(stageId).finally(() => {
+    inFlightStageDeletions.delete(stageId);
+  });
+  inFlightStageDeletions.set(stageId, run);
+  return run;
+}
+
+async function performStageDeletion(stageId: string): Promise<void> {
+  // Dynamic import avoids a static module cycle with the store.
+  const {
+    clearStoreForDeletedStage,
+    discardPendingStageChanges,
+    restorePendingStageChanges,
+    snapshotPendingStageChangesForDeletion,
+  } = await import('@/lib/store/stage');
+  // Snapshot the dirt this deletion is about to discard (queued + in-flight)
+  // BEFORE the deletion is marked, so a deletion that fails while the
+  // document still exists can put those PRE-DELETE edits back on the retry
+  // path instead of leaving them silently non-durable in memory. The
+  // snapshot covers scheduler-tracked dirt only; content that never had a
+  // descriptor — a direct aggregate save (`saveToStorage`) the epoch fence
+  // drops mid-flight, or edits refused during the deletion window — is
+  // recovered by the restore's full-aggregate re-mark instead (see
+  // restorePendingStageChanges).
+  const discardedChanges = snapshotPendingStageChangesForDeletion(stageId);
+  // Mark the deletion next: this bumps the stage's deletion epoch, so every
+  // persistence landing point drops writes captured before this moment —
+  // even a flush round that already holds its dirty snapshot (or the
+  // departing-stage retry), and even if a same-id restore later lifts the
+  // deleted flag.
+  markStageDeleted(stageId);
+  // The cascade's outcome is unknown until it settles. Read-side consumers
+  // (the deleted-warm branch in loadFromStorage) must not treat the deleted
+  // flag as "document gone" while this holds — a failure before document
+  // removal lifts the flag and hands the pending dirt back — so they await
+  // stageDeletionSettled instead. That wait cannot deadlock against this
+  // cascade: the cascade never waits on a load, and a parked load holds no
+  // document lock while awaiting settlement.
+  beginStageDeletionCascade(stageId);
+  // Then drop any still-queued persistence work for this stage: a mutation
+  // sitting in the debounce window must not even start a flush after the
+  // delete.
+  discardPendingStageChanges(stageId);
+  // Media allocations parked for slides this stage will never build now have
+  // no possible destination. Their bytes are the server's to expire: an
+  // allocation no document ever commits is released once its pending TTL runs
+  // out, so dropping the record here loses nothing but the record.
+  clearPendingMediaAllocations(stageId);
+  let documentDeleted = false;
+  try {
+    // storageSharedLockHeld: the cascade below holds the EXCLUSIVE epoch, which
+    // subsumes the shared one — the generation-guarded store must not re-acquire
+    // shared inside it (self-deadlock against our own exclusive hold).
+    await mutateDocument(
+      stageId,
+      async (document, store) =>
+        // Lock order: per-stage document lock, then the exclusive runtime epoch.
+        withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+          try {
+            // Collect scene ids before deletion so we can sweep per-scene localStorage
+            // keys (quiz draft / submitted answers / graded results).
+            const sceneIds = [...new Set(document?.scenes.map((s) => s.id) ?? [])];
+
+            await store.deleteDocument(stageId);
+            documentDeleted = true;
+
+            // Local cache only, and intentionally after the authoritative
+            // delete: liveness for the globally keyed audio rows is proved
+            // against the documents that survive, which requires this one to
+            // already be gone. The registry entries the document named are
+            // released by the server's own pass once the grace elapses.
+            await clearStageMediaCache(stageId);
+
+            // Clear the device-scoped playback cursor. Runtime rows of every
+            // kind are removed by the all-kind cascade below.
+            try {
+              await clearCursor(stageId);
+            } catch (error) {
+              log.warn(`Failed to clear playback cursor for stage ${stageId}:`, error);
+            }
+            try {
+              await clearCurrentScene(stageId);
+            } catch (error) {
+              log.warn(`Failed to clear editor current scene for stage ${stageId}:`, error);
+            }
+
+            // Sweep quiz persistence keys for each deleted scene.
+            for (const sceneId of sceneIds) {
+              clearAllForScene(sceneId);
+            }
+
+            // Learner-runtime data is a separate store, so it is cascaded after
+            // the document: a runtime failure must not undo the deletion (the
+            // helper warns instead of throwing).
+            const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+            await runtimeDeletion.completion;
+            try {
+              await clearStageDrainWatermarks(stageId);
+            } catch (error) {
+              log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
+            }
+
+            log.info(`Deleted stage: ${stageId}`);
+            releaseCaller(undefined);
+            // The public deletion remains bounded, but this callback deliberately
+            // retains the exclusive lock until a late runtime cascade can no longer
+            // delete data written after the caller was released.
+            await runtimeDeletion.settlement;
+          } catch (error) {
+            log.error('Failed to delete stage:', error);
+            throw error;
+          }
+        }),
+      { storageSharedLockHeld: true },
+    );
+  } catch (error) {
+    // If the deletion failed before the document was removed, the stage still
+    // exists — lift the deleted flag so subsequent edits persist normally,
+    // and put the discarded dirt back on the retry path (it was only dropped
+    // to prevent a resurrection that now cannot happen). The restore also
+    // re-marks the FULL aggregate: an in-flight direct aggregate save this
+    // deletion fenced has no descriptor in the snapshot, and only a flush
+    // that recaptures the whole current store state can carry its content to
+    // disk. The deletion epoch
+    // stays bumped, which is safe for the restored dirt: restore re-QUEUES
+    // change descriptors, so the eventual flush captures a fresh snapshot of
+    // the CURRENT store state under the CURRENT epoch — it does not replay
+    // the pre-delete capture, so nothing it writes can be epoch-stale. Once
+    // the document is gone, the deleted flag stays even on a partial cascade
+    // failure: dropping later writes is exactly what prevents resurrection.
+    if (!documentDeleted) {
+      unmarkStageDeleted(stageId);
+      restorePendingStageChanges(stageId, discardedChanges);
+    }
+    throw error;
+  } finally {
+    // Settlement: whichever way the cascade ended, its outcome is now
+    // recorded — document removed (deleted flag kept) or deletion failed
+    // before removal (flag lifted above). The read side may act on the flag.
+    settleStageDeletionCascade(stageId);
+  }
+  // Success: evict the deleted classroom from the in-memory store. A warm
+  // store would otherwise keep rendering the deleted classroom from memory —
+  // loadFromStorage short-circuits on it, the server-restore path never runs,
+  // and every edit is silently dropped. Done here (not at the UI call site)
+  // because this module already owns the deletion cascade's store-side
+  // bookkeeping through the same dynamic-import seam, so every caller of
+  // deleteStageData gets the invariant, not just the home page.
+  //
+  // Ordering with settlement waiters: the settle above releases any load
+  // parked in loadFromStorage's mid-deletion branch, but that waiter resumes
+  // as a microtask — this synchronous eviction runs first. The eviction
+  // deliberately keeps the current load token (see clearStoreForDeletedStage)
+  // so that resumed load stays current and performs the cold reload that
+  // hands the emptied route to the server-restore path.
+  clearStoreForDeletedStage(stageId);
+}
+
+/**
+ * List the owner's courses, newest first.
+ *
+ * The generic `GET /api/persistence/documents` listing is deliberately refused
+ * server-side (`403 FORBIDDEN_DOCUMENTS`): the capability model serves reads by
+ * id and listings owner-only, so the course list must not ask for an unscoped
+ * listing at all. `GET /api/stages` IS the owner listing — it resolves the
+ * owner from the same cookie the workbench uses and returns that owner's stage
+ * documents, each with the folder it is filed in.
+ */
 export async function listStages(userId?: string): Promise<StageListItem[]> {
   try {
     if (userId) {
@@ -972,4 +1163,145 @@ export async function deleteStageOutlines(stageId: string): Promise<void> {
   await deleteFromCloud(STAGE_OUTLINES_COLLECTION, stageId);
 }
 
-// ==================== Course Folders ====================}
+// ==================== Course Folders ====================
+//
+// Folders are course-grouping metadata owned by the same owner as the courses.
+// The list and every folder mutation go through the owner-scoped
+// `/api/folders` routes — the same store the workspace rail and the agent's
+// `create_folder` tool write to — and membership through
+// `/api/folders/members`. A course with no membership is unfiled.
+
+/** The wire shape of the owner-scoped folder routes (`/api/folders`). */
+type FolderRouteBody = {
+  readonly error?: { readonly code?: unknown; readonly message?: unknown };
+  readonly folder?: FolderRecord;
+  readonly folders?: readonly FolderRecord[];
+  readonly removedStageIds?: readonly string[];
+};
+
+/**
+ * Map a route refusal (`{ error: { code, message } }`) onto the shared
+ * `FolderNameError`, so every dialog maps one error type.
+ */
+function folderRouteError(body: FolderRouteBody | null | undefined): Error {
+  const code = body?.error?.code;
+  const message = typeof body?.error?.message === 'string' ? body.error.message : undefined;
+  if (code === 'FOLDER_NAME_DUPLICATE') {
+    return new FolderNameError(message ?? 'A folder with this name already exists', 'duplicate');
+  }
+  if (code === 'FOLDER_NAME_TOO_LONG') {
+    return new FolderNameError(message ?? 'Folder name is too long', 'tooLong');
+  }
+  if (code === 'FOLDER_NAME_EMPTY') {
+    return new FolderNameError(message ?? 'Folder name must not be empty', 'empty');
+  }
+  if (code === 'FOLDER_LIMIT_REACHED') {
+    return new FolderNameError(message ?? 'Folder count limit reached', 'limit');
+  }
+  return new Error(message ?? 'folder request failed');
+}
+
+/** The owner-scoped routes return the reference's `FolderItem` (row + userKey). */
+function toFolderRecord(folder: FolderRecord): FolderRecord {
+  return {
+    id: folder.id,
+    name: folder.name,
+    order: folder.order,
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt,
+  };
+}
+
+/**
+ * List the owner's folders, ordered by their `order` field (ascending).
+ */
+export async function listFolders(): Promise<FolderRecord[]> {
+  const res = await fetch('/api/folders', { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(`Failed to list owner folders: HTTP ${res.status}`);
+  }
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (!body || !Array.isArray(body.folders)) {
+    throw new Error('Malformed /api/folders response: expected { folders: [...] }');
+  }
+  return body.folders.map(toFolderRecord);
+}
+
+/**
+ * Create a folder. The route validates the name (width + uniqueness) and the
+ * count limit inside its owner-scoped transaction; its refusals map onto
+ * `FolderNameError`.
+ */
+export async function createFolder(name: string): Promise<FolderRecord> {
+  const res = await fetch('/api/folders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (!res.ok) throw folderRouteError(body);
+  if (!body?.folder) {
+    throw new Error('Malformed /api/folders response: expected { folder: { ... } }');
+  }
+  log.info(`Created folder "${name}" (${body.folder.id})`);
+  return toFolderRecord(body.folder);
+}
+
+/** Rename a folder (`PATCH /api/folders/:id`); refusals map onto `FolderNameError`. */
+export async function renameFolder(id: string, name: string): Promise<void> {
+  const res = await fetch(`/api/folders/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    throw folderRouteError((await res.json().catch(() => null)) as FolderRouteBody | null);
+  }
+  log.info(`Renamed folder ${id} to "${name}"`);
+}
+
+export type DeleteFolderMode = 'ungroup' | 'remove';
+
+/**
+ * Delete a folder (`DELETE /api/folders/:id`).
+ *
+ * - `'ungroup'` (default): drop the folder; its courses become unfiled.
+ * - `'remove'`: drop the folder AND delete every course that was filed in it.
+ *   The route returns the captured member ids, and each runs through
+ *   {@link deleteStageData} so the full deletion cascade (document, runtime,
+ *   device-local caches) applies.
+ */
+export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup'): Promise<void> {
+  const res = await fetch(`/api/folders/${encodeURIComponent(id)}?mode=${mode}`, {
+    method: 'DELETE',
+  });
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (!res.ok) throw folderRouteError(body);
+  if (mode === 'remove') {
+    const removedStageIds = body?.removedStageIds ?? [];
+    await Promise.all(removedStageIds.map((stageId) => deleteStageData(stageId)));
+  }
+  log.info(`Deleted folder ${id} (mode=${mode})`);
+}
+
+/**
+ * Move a course into a folder, or out of all folders when `folderId` is
+ * `undefined` (`POST /api/folders/members`). Idempotent. The route checks that
+ * the folder exists and belongs to the owner; a missing folder is refused.
+ */
+export async function setStageFolder(stageId: string, folderId: string | undefined): Promise<void> {
+  const res = await fetch('/api/folders/members', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stageId, folderId: folderId ?? null }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+    if (body?.error?.code === 'FOLDER_NOT_FOUND') {
+      throw new Error(`Folder not found: ${folderId}`);
+    }
+    throw folderRouteError(body);
+  }
+  log.info(`Set stage ${stageId} folder -> ${folderId ?? '(unfiled)'}`);
+}
+

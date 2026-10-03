@@ -47,6 +47,15 @@ function storedBinaryToBlob(value: Blob | ArrayBuffer, mimeType: string): Blob {
   return value.type ? value : new Blob([value], { type: mimeType });
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
  * Store images in Cloud Storage
  * Returns array of stored image download URLs

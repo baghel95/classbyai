@@ -44,12 +44,6 @@ import {
 import { isAssetStorageFull, markAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
 import { createLogger } from '@/lib/logger';
-import { 
-  uploadToCloudStorage, 
-  saveToCloud, 
-  deleteFromCloud, 
-  MEDIA_FILES_COLLECTION 
-} from '@/lib/utils/cloud-storage';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -172,16 +166,18 @@ function throwIfAborted(signal?: AbortSignal): void {
 export async function generateMediaForOutlines(
   outlines: SceneOutline[],
   stageId: string,
-  userId: string,
+  userIdOrSignal?: string | AbortSignal,
   abortSignal?: AbortSignal,
 ): Promise<void> {
+  const signal = userIdOrSignal instanceof AbortSignal ? userIdOrSignal : abortSignal;
+  const userId = typeof userIdOrSignal === 'string' ? userIdOrSignal : undefined;
   // Serial per stage. The caller aborts the previous pass before starting this
   // one; waiting for that pass to actually settle is what makes the handoff
   // safe without tracking individual elements. A commit already under way is
   // uncancellable — `putAsset` and the write-back run to completion — so
   // waiting is also what stops the replacement from paying for it twice.
   const pass = awaitCurrentPass(stageId).then(() =>
-    collectAndGenerate(outlines, stageId, abortSignal),
+    collectAndGenerate(outlines, stageId, signal, userId),
   );
   passesByStage.set(stageId, pass);
   try {
@@ -295,7 +291,27 @@ async function collectAndGenerate(
     if (abortSignal?.aborted) break;
     const effectiveUserId = userId || useStageStore.getState().userId || undefined;
     const attempt = await generateSingleMedia(req, stageId, abortSignal, undefined, scan, effectiveUserId);
-    if (!attempt.storageFull) continue;  }
+    if (!attempt.storageFull) continue;
+
+    log.warn(`Asset storage is full; stopping the media pass for ${stageId}.`);
+    await markAssetStorageFull(stageId);
+    markStorageFull(allRequests.slice(index + 1));
+    break;
+  }
+}
+
+/**
+ * Show a set of unattempted elements the condition they are waiting on.
+ */
+function markStorageFull(requests: readonly MediaGenerationRequest[]): void {
+  const store = useMediaGenerationStore.getState();
+  for (const request of requests) {
+    store.markFailed(
+      request.elementId,
+      `Asset storage is full; the ${request.type} was not generated`,
+      ASSET_QUOTA_EXCEEDED,
+    );
+  }
 }
 
 /**
@@ -864,10 +880,10 @@ const ATTEMPT_COMMITTED: MediaAttemptOutcome = { storageFull: false, committed: 
 async function generateSingleMedia(
   req: MediaGenerationRequest,
   stageId: string,
-  userId: string,
   abortSignal?: AbortSignal,
   refusedBytes?: RefusedMediaBytes,
   scan?: CachedMediaScan,
+  userId?: string,
 ): Promise<MediaAttemptOutcome> {
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);

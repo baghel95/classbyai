@@ -401,7 +401,7 @@ export async function saveGeneratedAgents(
     const existing = await queryFromCloud<any>(GENERATED_AGENTS_COLLECTION, userId);
     const toDelete = existing.filter(a => a.stageId === stageId);
     for (const agent of toDelete) {
-      await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id, userId);
+      await deleteFromCloud(GENERATED_AGENTS_COLLECTION, agent.id);
     }
 
     const records = agents.map((a) => ({ ...a, stageId, createdAt: Date.now() }));

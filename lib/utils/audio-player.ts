@@ -158,7 +158,7 @@ export class AudioPlayer {
 
       if (!blob && !directUrl) {
         try {
-          const audioRecord = await loadFromCloud<any>(AUDIO_FILES_COLLECTION, audioId, userId);
+          const audioRecord = await loadFromCloud<any>(AUDIO_FILES_COLLECTION, audioId);
           if (audioRecord?.url) {
             directUrl = audioRecord.url;
           }

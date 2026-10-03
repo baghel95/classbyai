@@ -415,9 +415,6 @@ export async function POST(req: NextRequest) {
 
     // Development: Limit number of scenes
     const maxScenes = process.env.NEXT_PUBLIC_MAX_SCENES;
-    if (maxScenes) {
-      mediaGenerationPolicy += `\n**IMPORTANT: For development purposes, generate EXACTLY ${maxScenes} scene outlines (no more, no less).**`;
-    }
 
     // Build teacher context from agents (if available)
     const teacherContext = formatTeacherPersonaForPrompt(agents);

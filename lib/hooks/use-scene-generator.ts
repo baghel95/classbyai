@@ -267,7 +267,8 @@ const MAX_NARRATOR_VOICE_FALLBACK_HOPS = 1;
 export async function generateAndStoreTTS(
   requestId: string,
   text: string,
-  languageOrUserId?: string,  signal?: AbortSignal,
+  language?: string,
+  signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
   stageId?: string,
   // Internal: an explicit voice that bypasses narrator binding resolution — used
@@ -278,6 +279,7 @@ export async function generateAndStoreTTS(
   // QWEN_VC_VOICE_NOT_FOUND retry so a chain of dead voices can never loop
   // /api/generate/tts beyond a single fallback hop.
   fallbackHops = 0,
+  userId?: string,
 ): Promise<string | null> {
   const settings = useSettingsStore.getState();
   // A generated roster's explicit voice binding is the course voice source of truth.
@@ -466,19 +468,19 @@ export async function generateAndStoreTTS(
     bytes[i] = binary.charCodeAt(i);
   }
   const blob = new Blob([bytes], { type: `audio/${data.format}` });
-  const userId = userIdParam || (languageOrUserId && (languageOrUserId.length > 10 || languageOrUserId.startsWith('user_')) ? languageOrUserId : useStageStore.getState().userId);
-  if (userId) {
+  const effectiveUserId = userId || useStageStore.getState().userId;
+  if (effectiveUserId) {
     try {
       const storagePath = `audio/${requestId}.${data.format}`;
-      const downloadUrl = await uploadToCloudStorage(storagePath, blob, userId);
+      const downloadUrl = await uploadToCloudStorage(storagePath, blob, effectiveUserId);
       await saveToCloud(AUDIO_FILES_COLLECTION, requestId, {
         url: downloadUrl,
         format: data.format,
         text,
         createdAt: Date.now(),
-      }, userId);
+      }, effectiveUserId);
     } catch (e) {
-      log.warn('Failed to upload audio to Cloud Storage:', e);
+      log.warn('Failed to upload/save audio to cloud:', e);
     }
   }
 
@@ -604,8 +606,10 @@ function speechAllocationIds(scene: Scene): string[] {
 /** Generate TTS for all speech actions in a scene. Returns result. */
 export async function generateTTSForScene(
   scene: Scene,
-  languageOrUserId?: string,  signal?: AbortSignal,
+  language?: string,
+  signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
+  userId?: string,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
   scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
@@ -1159,7 +1163,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             params.languageDirective || params.stageInfo.language,
             signal,
             undefined,
-            userId || undefined,
+            state.userId || undefined,
           );          if (!ttsResult.success) {
             store.getState().addFailedOutline(outline);
             return;
