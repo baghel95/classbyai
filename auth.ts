@@ -5,7 +5,7 @@ import { FirestoreAdapter } from "@auth/firebase-adapter"
 import { adminDb } from "@/lib/firebase-admin"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: FirestoreAdapter(adminDb),
+  ...(adminDb ? { adapter: FirestoreAdapter(adminDb) } : {}),
   session: {
     strategy: "jwt",
   },
