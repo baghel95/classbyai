@@ -717,7 +717,7 @@ function HomePage() {
           {/* ── Unified input area ── */}
           <div className="w-full relative group/input">
             <div className="absolute -inset-1 bg-linear-to-r from-purple-500/20 to-blue-500/20 rounded-[22px] blur-sm opacity-0 group-focus-within/input:opacity-100 transition duration-1000 group-hover/input:duration-200" />
-            <div className="relative w-full rounded-2xl border border-white/40 dark:border-white/5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-2xl shadow-black/5 dark:shadow-black/20 transition-all duration-500 focus-within:ring-2 focus-within:ring-purple-500/20 overflow-hidden">
+            <div className="relative w-full rounded-2xl border border-white/40 dark:border-white/5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl shadow-2xl shadow-black/5 dark:shadow-black/20 transition-all duration-500 focus-within:ring-2 focus-within:ring-purple-500/20">
               <div className="relative z-20 flex items-start justify-between">
                 <GreetingBar />
                 <div className="pr-3 pt-3.5 shrink-0">

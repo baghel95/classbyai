@@ -160,11 +160,24 @@ export async function POST(req: NextRequest) {
       | GeneratedInteractiveContent
       | GeneratedPBLContent;
 
+    const userLocale = req.headers?.get('x-user-locale') ?? '';
+    let effectiveLanguageDirective = languageDirective || '';
+    if (userLocale.startsWith('hi')) {
+      effectiveLanguageDirective = (effectiveLanguageDirective ? effectiveLanguageDirective + '\n' : '') +
+        'CRITICAL: Generate all spoken dialogues, explanations, and teacher/student interactions strictly in Hindi (हिन्दी) using Devanagari script.';
+    } else if (userLocale.startsWith('mr')) {
+      effectiveLanguageDirective = (effectiveLanguageDirective ? effectiveLanguageDirective + '\n' : '') +
+        'CRITICAL: Generate all spoken dialogues, explanations, and teacher/student interactions strictly in Marathi (मराठी) using Devanagari script.';
+    } else if (userLocale.startsWith('en')) {
+      effectiveLanguageDirective = (effectiveLanguageDirective ? effectiveLanguageDirective + '\n' : '') +
+        'CRITICAL: Generate all spoken dialogues, explanations, and teacher/student interactions strictly in English.';
+    }
+
     const actions = await generateSceneActions(outline, generationContent, aiCall, {
       ctx,
       agents,
       userProfile,
-      languageDirective,
+      languageDirective: effectiveLanguageDirective,
     });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);

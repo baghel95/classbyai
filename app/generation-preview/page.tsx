@@ -281,6 +281,7 @@ function GenerationPreviewContent() {
       // Media generation toggles
       'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
       'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
+      'x-user-locale': settings.classroomLanguage || 'en-IN',
     };
   };
 
@@ -324,6 +325,35 @@ function GenerationPreviewContent() {
 
     setError(null);
     setCurrentStepIndex(0);
+
+    // Deduct credits for classroom generation (10 credits per lesson)
+    try {
+      const creditRes = await fetch('/api/user/credits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'deduct',
+          amount: 10,
+          reason: `Lesson Generation: ${currentSession.requirements?.requirement?.slice(0, 40) || 'AI Classroom'}`,
+        }),
+      });
+      if (creditRes.status === 402) {
+        const errData = await creditRes.json();
+        setError(errData.error || 'Insufficient credits. Please upgrade your subscription to continue.');
+        return;
+      }
+      if (creditRes.ok) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('credits-updated'));
+        }
+      }
+    } catch (creditErr: any) {
+      if (creditErr?.message?.includes('credits') || creditErr?.message?.includes('Insufficient')) {
+        setError(creditErr.message);
+        return;
+      }
+      log.warn('Non-blocking credit check error:', creditErr);
+    }
 
     try {
       // Compute active steps for this session (recomputed after session mutations)

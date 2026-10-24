@@ -36,9 +36,13 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_ELEVENLABS',
   'TTS_MINIMAX',
   'TTS_VOXCPM',
+  'TTS_SARVAM',
+  'TTS_SERVAM',
   'ASR_OPENAI',
   'ASR_QWEN',
   'ASR_FUNASR',
+  'ASR_SARVAM',
+  'ASR_SERVAM',
   'PDF_UNPDF',
   'PDF_MINERU',
   'PDF_MINERU_CLOUD',
@@ -1095,6 +1099,42 @@ video:
       expect(resolveASRBaseUrl('funasr-asr', 'https://client.example.com/v1')).toBe(
         'http://funasr.internal:8000/v1',
       );
+    });
+  });
+
+  describe('Sarvam / Servam server configuration', () => {
+    it('activates sarvam-tts from TTS_SERVAM_API_KEY and TTS_SERVAM_BASE_URL', async () => {
+      vi.stubEnv('TTS_SERVAM_API_KEY', 'sk-servam-tts-123');
+      vi.stubEnv('TTS_SERVAM_BASE_URL', 'https://api.sarvam.ai/text-to-speech');
+      const { getServerTTSProviders, resolveTTSApiKey, resolveTTSBaseUrl, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerTTSProviders()['sarvam-tts']).toEqual({});
+      expect(isServerConfiguredProvider('tts', 'sarvam-tts')).toBe(true);
+      expect(resolveTTSApiKey('sarvam-tts')).toBe('sk-servam-tts-123');
+      expect(resolveTTSBaseUrl('sarvam-tts')).toBe('https://api.sarvam.ai/text-to-speech');
+    });
+
+    it('activates sarvam-asr from ASR_SERVAM_API_KEY and ASR_SERVAM_BASE_URL', async () => {
+      vi.stubEnv('ASR_SERVAM_API_KEY', 'sk-servam-asr-123');
+      vi.stubEnv('ASR_SERVAM_BASE_URL', 'https://api.sarvam.ai/speech-to-text');
+      const { getServerASRProviders, resolveASRApiKey, resolveASRBaseUrl, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['sarvam-asr']).toEqual({});
+      expect(isServerConfiguredProvider('asr', 'sarvam-asr')).toBe(true);
+      expect(resolveASRApiKey('sarvam-asr')).toBe('sk-servam-asr-123');
+      expect(resolveASRBaseUrl('sarvam-asr')).toBe('https://api.sarvam.ai/speech-to-text');
+    });
+
+    it('activates sarvam-tts from TTS_SARVAM_API_KEY', async () => {
+      vi.stubEnv('TTS_SARVAM_API_KEY', 'sk-sarvam-tts-456');
+      const { getServerTTSProviders, resolveTTSApiKey, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerTTSProviders()['sarvam-tts']).toEqual({});
+      expect(isServerConfiguredProvider('tts', 'sarvam-tts')).toBe(true);
+      expect(resolveTTSApiKey('sarvam-tts')).toBe('sk-sarvam-tts-456');
     });
   });
 

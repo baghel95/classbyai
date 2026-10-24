@@ -854,11 +854,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const pendingAtStart = new Map(pendingChanges);
     try {
       const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
+      const { currentSceneId: _stageCurrentSceneId, ...cleanStage } = (stage || {}) as Stage & {
+        currentSceneId?: unknown;
+      };
       const { saveStageData } = await import('@/lib/utils/stage-storage');
       const result = await saveStageData(
         stage.id,
         {
-          stage,
+          stage: cleanStage as Stage,
           scenes: persistedScenes,
           currentSceneId,
           chats,
@@ -871,7 +874,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           },
         },
         capturedEpoch,
-        userId || undefined,
+        ...(userId ? [userId] : []),
       );
 
       // An epoch-stale drop persisted nothing: skip every piece of success

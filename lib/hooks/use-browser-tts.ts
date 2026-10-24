@@ -26,7 +26,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
     rate = 1.0,
     pitch = 1.0,
     volume = 1.0,
-    lang = 'zh-CN',
+    lang = 'en-IN',
   } = options;
 
   const [isSpeaking, setIsSpeaking] = useState(false);

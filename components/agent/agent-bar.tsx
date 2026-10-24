@@ -22,6 +22,7 @@ import {
   VolumeX,
   Loader2,
   Search,
+  Globe,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -199,14 +200,29 @@ function AgentVoicePill({
   // Cleanup on unmount
   useEffect(() => () => stopPreview(), [stopPreview]);
 
-  // Disabled (TTS off) OR no enabled provider ⇒ render the same muted,
-  // non-interactive pill — don't silently hide the control (#665).
+  const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
+  const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
+
+  // Disabled (TTS off) OR no enabled provider ⇒ render pill.
+  // When TTS is off but providers are available, clicking enables audio (#665).
   if (disabled) {
+    const canEnable = !ttsEnabled && availableProviders.length > 0;
     return (
       <div
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (canEnable) {
+            setTTSEnabled(true);
+          }
+        }}
         onPointerDown={(e) => e.stopPropagation()}
-        className="flex items-center gap-1.5 h-6 w-[100px] rounded-full bg-muted/40 px-2.5 text-[11px] text-muted-foreground/30 shrink-0 cursor-not-allowed"
+        className={cn(
+          'flex items-center gap-1.5 h-6 w-[100px] rounded-full px-2.5 text-[11px] shrink-0 transition-colors',
+          canEnable
+            ? 'bg-muted/40 hover:bg-primary/10 text-muted-foreground/60 hover:text-primary cursor-pointer'
+            : 'bg-muted/40 text-muted-foreground/30 cursor-not-allowed',
+        )}
+        title={canEnable ? 'Audio is disabled. Click to enable speech audio' : undefined}
       >
         <VolumeX className="size-3 shrink-0" />
         <span className="truncate flex-1 text-left">{displayName}</span>
@@ -469,14 +485,29 @@ function TeacherVoicePill({
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
-  // Disabled (TTS off) OR no enabled provider ⇒ render the same muted,
-  // non-interactive pill — don't silently hide the control (#665).
+  const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
+  const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
+
+  // Disabled (TTS off) OR no enabled provider ⇒ render pill.
+  // When TTS is off but providers are available, clicking enables audio (#665).
   if (disabled) {
+    const canEnable = !ttsEnabled && availableProviders.length > 0;
     return (
       <div
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (canEnable) {
+            setTTSEnabled(true);
+          }
+        }}
         onPointerDown={(e) => e.stopPropagation()}
-        className="flex items-center gap-1.5 h-6 w-[100px] rounded-full bg-muted/40 px-2.5 text-[11px] text-muted-foreground/30 shrink-0 cursor-not-allowed"
+        className={cn(
+          'flex items-center gap-1.5 h-6 w-[100px] rounded-full px-2.5 text-[11px] shrink-0 transition-colors',
+          canEnable
+            ? 'bg-muted/40 hover:bg-primary/10 text-muted-foreground/60 hover:text-primary cursor-pointer'
+            : 'bg-muted/40 text-muted-foreground/30 cursor-not-allowed',
+        )}
+        title={canEnable ? 'Audio is disabled. Click to enable speech audio' : undefined}
       >
         <VolumeX className="size-3 shrink-0" />
         <span className="truncate flex-1 text-left">{displayName}</span>
@@ -621,6 +652,9 @@ export function AgentBar() {
   const setAgentSelectionIsUserSet = useSettingsStore((s) => s.setAgentSelectionIsUserSet);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
+  const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
+  const classroomLanguage = useSettingsStore((s) => s.classroomLanguage);
+  const setClassroomLanguage = useSettingsStore((s) => s.setClassroomLanguage);
 
   const [open, setOpen] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -809,26 +843,27 @@ export function AgentBar() {
   };
 
   return (
-    <div ref={containerRef} className="relative w-96">
+    <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            className={cn(
-              'group flex items-center gap-2 cursor-pointer rounded-full px-2.5 py-2 transition-all w-full',
-              'border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60',
-            )}
-            onClick={() => setOpen(!open)}
-          >
-            <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors hidden sm:block font-medium flex-1 text-left truncate">
-              {open ? t('agentBar.expandedTitle') : t('agentBar.readyToLearn')}
-            </span>
-            {avatarRow}
-            {open ? (
-              <ChevronUp className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
-            ) : (
-              <ChevronDown className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
-            )}
-          </button>
+          <PopoverTrigger asChild>
+            <button
+              className={cn(
+                'group flex items-center gap-2 cursor-pointer rounded-full px-3 py-1.5 transition-all',
+                'border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60',
+              )}
+            >
+              <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors hidden sm:block font-medium truncate max-w-[150px]">
+                {open ? t('agentBar.expandedTitle') : t('agentBar.readyToLearn')}
+              </span>
+              {avatarRow}
+              {open ? (
+                <ChevronUp className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
+              ) : (
+                <ChevronDown className="size-3 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
+              )}
+            </button>
+          </PopoverTrigger>
         </TooltipTrigger>
         {!open && (
           <TooltipContent side="bottom" sideOffset={4}>
@@ -837,94 +872,145 @@ export function AgentBar() {
         )}
       </Tooltip>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="absolute right-0 top-full mt-1 z-50 w-96"
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-96 p-2.5 rounded-2xl bg-white/95 dark:bg-[#0E1322]/95 border border-border/60 dark:border-white/10 backdrop-blur-xl shadow-2xl shadow-black/40 z-50 overflow-hidden"
+      >
+        {/* Header with Title and Narration / Audio Toggle */}
+        <div className="flex items-center justify-between px-1 pb-2 mb-2 border-b border-border/40">
+          <span className="text-xs font-semibold text-foreground/90">
+            {t('agentBar.expandedTitle')}
+          </span>
+          <button
+            type="button"
+            onClick={() => setTTSEnabled(!ttsEnabled)}
+            className={cn(
+              'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all cursor-pointer border',
+              ttsEnabled
+                ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 dark:bg-primary/20 dark:border-primary/40'
+                : 'bg-muted/60 border-border/60 text-muted-foreground/70 hover:bg-muted hover:text-foreground',
+            )}
+            title={ttsEnabled ? 'Speech audio enabled (click to mute)' : 'Speech audio disabled (click to enable)'}
           >
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06] shadow-[0_1px_8px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_8px_-2px_rgba(0,0,0,0.3)] px-2 py-1.5">
-              {/* Teacher — always visible */}
-              {teacherAgent && (
-                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/5 mb-2">
-                  <div
-                    className="size-7 rounded-full overflow-hidden shrink-0 ring-1 ring-border/40"
-                    style={{ boxShadow: `0 0 0 2px ${teacherAgent.color}30` }}
-                  >
-                    <img
-                      src={teacherAgent.avatar}
-                      alt={getAgentName(teacherAgent)}
-                      className="size-full object-cover"
-                    />
-                  </div>
-                  <span className="text-[13px] font-medium truncate min-w-0 flex-1">
-                    {getAgentName(teacherAgent)}
-                  </span>
-                  <TeacherVoicePill
-                    availableProviders={availableProviders}
-                    disabled={!ttsEnabled || availableProviders.length === 0}
-                  />
-                </div>
-              )}
+            {ttsEnabled ? (
+              <>
+                <Volume2 className="size-3.5 text-primary" />
+                <span>Audio Enabled</span>
+              </>
+            ) : (
+              <>
+                <VolumeX className="size-3.5 text-muted-foreground" />
+                <span>Audio Disabled</span>
+              </>
+            )}
+          </button>
+        </div>
 
-              {/* Mode tabs */}
-              <div className="flex rounded-lg border bg-muted/30 p-0.5 mb-2">
-                <button
-                  onClick={() => handleModeChange('preset')}
-                  className={cn(
-                    'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center',
-                    agentMode === 'preset'
-                      ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {t('settings.agentModePreset')}
-                </button>
-                <button
-                  onClick={() => handleModeChange('auto')}
-                  className={cn(
-                    'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center flex items-center justify-center gap-1',
-                    agentMode === 'auto'
-                      ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  <Sparkles className="h-3 w-3" />
-                  {t('settings.agentModeAuto')}
-                </button>
-              </div>
+        {/* Classroom Language Selection: English | Hindi | Marathi */}
+        <div className="flex items-center justify-between px-2 py-1.5 mb-2 rounded-xl bg-muted/40 border border-border/40">
+          <span className="text-xs font-medium text-foreground/80 flex items-center gap-1.5">
+            <Globe className="size-3.5 text-primary" />
+            Class Language:
+          </span>
+          <div className="flex items-center gap-1">
+            {[
+              { id: 'en-IN', label: 'English' },
+              { id: 'hi-IN', label: 'हिन्दी' },
+              { id: 'mr-IN', label: 'मराठी' },
+            ].map((lang) => (
+              <button
+                key={lang.id}
+                type="button"
+                onClick={() => setClassroomLanguage(lang.id as 'en-IN' | 'hi-IN' | 'mr-IN')}
+                className={cn(
+                  'px-2 py-0.5 text-xs font-semibold rounded-md transition-all cursor-pointer',
+                  (classroomLanguage || 'en-IN') === lang.id
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/80',
+                )}
+              >
+                {lang.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-              {agentMode === 'preset' ? (
-                <div className="max-h-56 overflow-y-auto -mx-0.5">
-                  {agents
-                    .filter((a) => a.role !== 'teacher')
-                    .map((agent, idx) => renderAgentRow(agent, idx + 1, false))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center pt-6 pb-3 gap-4">
-                  <div className="relative flex items-center justify-center">
-                    <div className="absolute size-10 rounded-full bg-violet-400/10 dark:bg-violet-400/15 animate-ping [animation-duration:3s]" />
-                    <div className="absolute size-12 rounded-full bg-violet-400/5 dark:bg-violet-400/10 animate-pulse [animation-duration:2.5s]" />
-                    <Shuffle className="relative size-5 text-violet-400 dark:text-violet-500" />
-                  </div>
-                  <div className="flex-1" />
-                  <div className="text-center space-y-1">
-                    <p className="text-[11px] text-muted-foreground/60">
-                      {t('settings.agentModeAutoDesc')}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/40">
-                      {t('agentBar.voiceAutoAssign')}
-                    </p>
-                  </div>
-                </div>
-              )}
+        {/* Teacher — always visible */}
+        {teacherAgent && (
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/5 dark:bg-primary/10 border border-primary/10 mb-2">
+            <div
+              className="size-7 rounded-full overflow-hidden shrink-0 ring-1 ring-border/40"
+              style={{ boxShadow: `0 0 0 2px ${teacherAgent.color}30` }}
+            >
+              <img
+                src={teacherAgent.avatar}
+                alt={getAgentName(teacherAgent)}
+                className="size-full object-cover"
+              />
             </div>
-          </motion.div>
+            <span className="text-[13px] font-medium truncate min-w-0 flex-1">
+              {getAgentName(teacherAgent)}
+            </span>
+            <TeacherVoicePill
+              availableProviders={availableProviders}
+              disabled={!ttsEnabled || availableProviders.length === 0}
+            />
+          </div>
         )}
-      </AnimatePresence>
-    </div>
+
+        {/* Mode tabs */}
+        <div className="flex rounded-lg border bg-muted/30 dark:bg-white/5 border-border/50 dark:border-white/10 p-0.5 mb-2">
+          <button
+            onClick={() => handleModeChange('preset')}
+            className={cn(
+              'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center',
+              agentMode === 'preset'
+                ? 'bg-background shadow-sm text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t('settings.agentModePreset')}
+          </button>
+          <button
+            onClick={() => handleModeChange('auto')}
+            className={cn(
+              'flex-1 py-1.5 text-xs font-medium rounded-md transition-all text-center flex items-center justify-center gap-1',
+              agentMode === 'auto'
+                ? 'bg-background shadow-sm text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Sparkles className="h-3 w-3" />
+            {t('settings.agentModeAuto')}
+          </button>
+        </div>
+
+        {agentMode === 'preset' ? (
+          <div className="max-h-56 overflow-y-auto -mx-0.5 space-y-0.5">
+            {agents
+              .filter((a) => a.role !== 'teacher')
+              .map((agent, idx) => renderAgentRow(agent, idx + 1, false))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center pt-6 pb-3 gap-4">
+            <div className="relative flex items-center justify-center">
+              <div className="absolute size-10 rounded-full bg-violet-400/10 dark:bg-violet-400/15 animate-ping [animation-duration:3s]" />
+              <div className="absolute size-12 rounded-full bg-violet-400/5 dark:bg-violet-400/10 animate-pulse [animation-duration:2.5s]" />
+              <Shuffle className="relative size-5 text-violet-400 dark:text-violet-500" />
+            </div>
+            <div className="flex-1" />
+            <div className="text-center space-y-1">
+              <p className="text-[11px] text-muted-foreground/60">
+                {t('settings.agentModeAutoDesc')}
+              </p>
+              <p className="text-[10px] text-muted-foreground/40">
+                {t('agentBar.voiceAutoAssign')}
+              </p>
+            </div>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

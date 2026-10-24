@@ -1195,9 +1195,41 @@ async function generateSarvamTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['sarvam-tts'].defaultBaseUrl;
+  let baseUrl = (
+    config.baseUrl ||
+    TTS_PROVIDERS['sarvam-tts'].defaultBaseUrl ||
+    'https://api.sarvam.ai'
+  ).trim();
+  baseUrl = baseUrl.replace(/\/text-to-speech\/?$/, '').replace(/\/+$/, '');
 
-  const response = await fetch(`${baseUrl}/text-to-speech`, {
+  let targetLanguageCode = 'en-IN';
+  let speaker = 'shubh';
+
+  if (config.voice && config.voice !== 'default') {
+    if (config.voice.includes(':')) {
+      const parts = config.voice.split(':');
+      targetLanguageCode = parts[0];
+      speaker = parts[1] || 'shubh';
+    } else if (config.voice.includes('-')) {
+      targetLanguageCode = config.voice;
+    } else {
+      speaker = config.voice;
+    }
+  }
+
+  const SARVAM_SPEAKERS = new Set([
+    'aditya', 'ritu', 'ashutosh', 'priya', 'neha', 'rahul', 'pooja', 'rohan',
+    'simran', 'kavya', 'amit', 'dev', 'ishita', 'shreya', 'ratan', 'varun',
+    'manan', 'sumit', 'roopa', 'kabir', 'aayan', 'shubh', 'advait', 'anand',
+    'tanya', 'tarun', 'sunny', 'mani', 'gokul', 'vijay', 'shruti', 'suhani',
+    'mohit', 'kavitha', 'rehan', 'soham', 'rupali',
+  ]);
+
+  if (!SARVAM_SPEAKERS.has(speaker.toLowerCase())) {
+    speaker = 'shubh';
+  }
+
+  const response = await ttsFetch(config, `${baseUrl}/text-to-speech`, {
     method: 'POST',
     headers: {
       'api-subscription-key': config.apiKey!,
@@ -1205,9 +1237,12 @@ async function generateSarvamTTS(
     },
     body: JSON.stringify({
       text,
-      target_language_code: config.voice,
-      speaker: 'shubh',
-      model: 'bulbul:v3',
+      target_language_code: targetLanguageCode,
+      speaker,
+      model: config.modelId || 'bulbul:v3',
+      pace: typeof config.speed === 'number' ? Math.max(0.5, Math.min(2.0, config.speed)) : 1.0,
+      speech_sample_rate: 22050,
+      enable_preprocessing: true,
     }),
     signal,
   });
@@ -1219,8 +1254,8 @@ async function generateSarvamTTS(
   }
 
   const data = await response.json();
-  if (!data.audios) {
-    throw new Error('Sarvam AI TTS error: No audio_content in response');
+  if (!data.audios || !data.audios[0]) {
+    throw new Error('Sarvam AI TTS error: No audio in response');
   }
 
   const audioBuffer = Buffer.from(data.audios[0], 'base64');

@@ -316,18 +316,18 @@ function detectLegacyLanguage(config: PBLProjectConfig): string {
   if (/[\uac00-\ud7af]/.test(sample)) return 'ko-KR';
   if (/[\u0600-\u06ff]/.test(sample)) return 'ar-SA';
   if (/[\u0400-\u04ff]/.test(sample)) return 'ru-RU';
-  if (/[\u3400-\u9fff]/.test(sample)) return 'zh-CN';
-  return 'en-US';
+  if (/[\u0900-\u097f]/.test(sample)) return 'hi-IN';
+  return 'en-IN';
 }
 
 function legacyCompletionCriteria(language: string): string {
-  return language.startsWith('zh')
-    ? '学习者完成该任务，并能解释自己的解决思路。'
+  return language.startsWith('hi') || language.startsWith('mr')
+    ? 'शिक्षार्थी इस कार्य को पूरा करता है और अपने तर्क को समझा सकता है।'
     : 'The learner completes this task and can explain their reasoning.';
 }
 
 function legacyDebrief(language: string): string {
-  return language.startsWith('zh')
-    ? '总结本任务的关键收获，并准备进入下一步。'
+  return language.startsWith('hi') || language.startsWith('mr')
+    ? 'इस कार्य से मुख्य निष्कर्षों को संक्षेप में बताएं और अगले चरण के लिए तैयार हों।'
     : 'Summarize the key takeaways from this task and prepare for the next step.';
 }

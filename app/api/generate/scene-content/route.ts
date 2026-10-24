@@ -323,6 +323,17 @@ export async function POST(req: NextRequest) {
     );
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
+    let effectiveLanguageDirective = languageDirective || '';
+    if (userLocale.startsWith('hi')) {
+      effectiveLanguageDirective = (effectiveLanguageDirective ? effectiveLanguageDirective + '\n' : '') +
+        'CRITICAL: Generate all slide text, whiteboard content, quiz questions/answers, and teaching content strictly in Hindi (हिन्दी) using Devanagari script.';
+    } else if (userLocale.startsWith('mr')) {
+      effectiveLanguageDirective = (effectiveLanguageDirective ? effectiveLanguageDirective + '\n' : '') +
+        'CRITICAL: Generate all slide text, whiteboard content, quiz questions/answers, and teaching content strictly in Marathi (मराठी) using Devanagari script.';
+    } else if (userLocale.startsWith('en')) {
+      effectiveLanguageDirective = (effectiveLanguageDirective ? effectiveLanguageDirective + '\n' : '') +
+        'CRITICAL: Generate all slide text, whiteboard content, quiz questions/answers, and teaching content strictly in English.';
+    }
 
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
@@ -331,7 +342,7 @@ export async function POST(req: NextRequest) {
       generatedMediaMapping,
       resolvedVisionImages,
       agents,
-      languageDirective,
+      languageDirective: effectiveLanguageDirective,
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
       allowProceduralSkill: vocationalActive,

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { createUser, findUserByEmail } from '@/lib/server/user-store';
 
 export async function POST(request: Request) {
   try {
@@ -9,35 +9,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Create user in Firebase Auth
-    const userRecord = await adminAuth.createUser({
-      email,
-      password,
-      displayName: name,
-    });
-
-    // Create user document in Firestore (to stay in sync with NextAuth's adapter)
-    try {
-      await adminDb.collection('users').doc(userRecord.uid).set({
-        name: name || null,
-        email: email,
-        image: null,
-        emailVerified: null,
-        createdAt: new Date(),
-      });
-    } catch (dbError: any) {
-      console.error('Firestore write error:', dbError);
-      // We don't necessarily want to fail the whole signup if just the Firestore sync fails, 
-      // but the 5 NOT_FOUND is a critical configuration issue.
-      return NextResponse.json({ 
-        error: 'Authentication successful but database sync failed. Please ensure Firestore is initialized in Firebase Console.',
-        details: dbError.message 
-      }, { status: 500 });
+    if (password.length < 6) {
+      return NextResponse.json({ error: 'Password must be at least 6 characters long' }, { status: 400 });
     }
 
-    return NextResponse.json({ message: 'User created successfully', uid: userRecord.uid }, { status: 201 });
+    // Check if user already exists in PostgreSQL
+    const existingUser = await findUserByEmail(email);
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'An account with this email already exists' },
+        { status: 400 }
+      );
+    }
+
+    // Create user in PostgreSQL
+    const user = await createUser({
+      email,
+      password,
+      name,
+    });
+
+    return NextResponse.json(
+      { message: 'User created successfully', uid: user.id },
+      { status: 201 }
+    );
   } catch (error: any) {
     console.error('Signup error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to create user' }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || 'Failed to create user' },
+      { status: 500 }
+    );
   }
 }

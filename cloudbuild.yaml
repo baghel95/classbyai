@@ -1,0 +1,20 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_BACKEND_URL=https://classbyai-backend-278177111411.asia-south1.run.app/api'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyAzgSxqCEPSu54p7Y-wakL8Z1khXFqvom0'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_MAX_SCENES=2'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/project-b08ecb9e-f283-48c3-aa6/classbyai-repo/frontend:latest'
+      - '.'
+images:
+  - 'asia-south1-docker.pkg.dev/project-b08ecb9e-f283-48c3-aa6/classbyai-repo/frontend:latest'
+options:
+  machineType: 'E2_HIGHCPU_32'
+timeout: '1800s'

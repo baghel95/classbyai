@@ -547,8 +547,12 @@ async function transcribeSarvamASR(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
-  const baseUrl = config.baseUrl || ASR_PROVIDERS['sarvam-asr'].defaultBaseUrl;
-
+  let baseUrl = (
+    config.baseUrl ||
+    ASR_PROVIDERS['sarvam-asr'].defaultBaseUrl ||
+    'https://api.sarvam.ai'
+  ).trim();
+  baseUrl = baseUrl.replace(/\/speech-to-text\/?$/, '').replace(/\/+$/, '');
   const formData = new FormData();
 
   // Convert audio to Blob if it's a Buffer
@@ -567,19 +571,25 @@ async function transcribeSarvamASR(
     blob = audioBuffer as Blob;
   }
 
-  formData.append('file', blob, 'audio.wav');
+  const fileName = blob.type && blob.type.includes('webm') ? 'audio.webm' : 'audio.wav';
+  formData.append('file', blob, fileName);
   if (config.language && config.language !== 'auto') {
     formData.append('language_code', config.language);
   }
-  formData.append('model', 'saarika:v2.5');
+  formData.append('model', config.modelId || 'saaras:v3');
+  formData.append('mode', 'transcribe');
 
-  const response = await fetch(`${baseUrl}/speech-to-text`, {
-    method: 'POST',
-    headers: {
-      'api-subscription-key': config.apiKey!,
+  const response = await audioProviderFetch(
+    `${baseUrl}/speech-to-text`,
+    {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': config.apiKey!,
+      },
+      body: formData,
     },
-    body: formData,
-  });
+    audioEndpointPolicy(config),
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);

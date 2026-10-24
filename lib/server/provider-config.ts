@@ -95,6 +95,8 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
   TTS_LEMONADE: 'lemonade-tts',
+  TTS_SARVAM: 'sarvam-tts',
+  TTS_SERVAM: 'sarvam-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
@@ -103,6 +105,8 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_AZURE: 'azure-asr',
   ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
+  ASR_SARVAM: 'sarvam-asr',
+  ASR_SERVAM: 'sarvam-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {

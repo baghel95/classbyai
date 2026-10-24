@@ -40,6 +40,8 @@ const TTS_PREFIXES = [
   'TTS_ELEVENLABS',
   'TTS_LEMONADE',
   'TTS_MINIMAX',
+  'TTS_SARVAM',
+  'TTS_SERVAM',
 ] as const;
 
 const CLIP = new Uint8Array([1, 2, 3, 4]);

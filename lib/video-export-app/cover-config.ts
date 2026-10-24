@@ -11,8 +11,6 @@ import koKR from '@/lib/i18n/locales/ko-KR.json';
 import ptBR from '@/lib/i18n/locales/pt-BR.json';
 import ruRU from '@/lib/i18n/locales/ru-RU.json';
 import viVN from '@/lib/i18n/locales/vi-VN.json';
-import zhCN from '@/lib/i18n/locales/zh-CN.json';
-import zhTW from '@/lib/i18n/locales/zh-TW.json';
 import type { VideoExportLabels, VideoExportCta } from '@/lib/video-export';
 
 const DEFAULT_DESTINATION = 'open.maic.chat';
@@ -50,8 +48,6 @@ const LOCALE_RESOURCES: Record<Locale, Record<string, unknown>> = {
   'en-US': enUS,
   'en-IN': enIN,
   'hi-IN': hiIN,
-  'zh-CN': zhCN,
-  'zh-TW': zhTW,
   'ja-JP': jaJP,
   'ko-KR': koKR,
   'es-MX': esMX,

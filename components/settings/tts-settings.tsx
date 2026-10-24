@@ -237,7 +237,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     effectiveBaseUrl && endpointPath
       ? selectedProviderId === 'voxcpm-tts'
         ? buildVoxCPMBackendUrl(effectiveBaseUrl, voxcpmBackend)
-        : effectiveBaseUrl + endpointPath
+        : effectiveBaseUrl.endsWith(endpointPath)
+          ? effectiveBaseUrl
+          : effectiveBaseUrl.replace(/\/+$/, '') + endpointPath
       : '';
   const isVoxCPMVLLMOmni = voxcpmBackend === 'vllm-omni';
 

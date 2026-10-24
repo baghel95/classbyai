@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
+import { CreditBadge } from '@/components/user/credit-badge';
 import { 
   Avatar, 
   AvatarImage, 
@@ -105,6 +106,8 @@ export function Header({ onSettingsOpen, scrollToGenerate }: HeaderProps) {
             <Globe className="size-3.5" />
             <span className="uppercase">{locale.split('-')[0]}</span>
           </button>
+
+          <CreditBadge />
 
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

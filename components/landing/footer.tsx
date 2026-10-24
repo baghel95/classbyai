@@ -101,7 +101,7 @@ export function Footer() {
           </p>
           <div className="flex items-center gap-6">
             <span className="text-xs font-bold text-slate-400 tracking-widest uppercase">
-              Built by THU-MAIC
+              Built by Classby-AI
             </span>
           </div>
         </div>

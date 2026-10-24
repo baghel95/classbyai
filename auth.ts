@@ -1,11 +1,14 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
-import { FirestoreAdapter } from "@auth/firebase-adapter"
-import { adminDb } from "@/lib/firebase-admin"
+import {
+  verifyUserCredentials,
+  findOrCreateOAuthUser,
+  findUserByEmail,
+} from "@/lib/server/user-store"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  ...(adminDb ? { adapter: FirestoreAdapter(adminDb) } : {}),
+  trustHost: true,
   session: {
     strategy: "jwt",
   },
@@ -24,43 +27,53 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!credentials?.email || !credentials?.password) return null;
 
         try {
-          // Verify with Firebase Auth REST API
-          const res = await fetch(
-            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.NEXT_PUBLIC_FIREBASE_API_KEY}`,
-            {
-              method: "POST",
-              body: JSON.stringify({
-                email: credentials.email,
-                password: credentials.password,
-                returnSecureToken: true,
-              }),
-              headers: { "Content-Type": "application/json" },
-            }
+          const user = await verifyUserCredentials(
+            String(credentials.email),
+            String(credentials.password)
           );
 
-          const data = await res.json();
-
-          if (res.ok && data.localId) {
-            return {
-              id: data.localId,
-              email: data.email,
-              name: data.displayName,
-            };
-          } else {
-            console.error("Firebase Auth REST API error:", data.error?.message || data);
+          if (!user) {
             return null;
           }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          };
         } catch (error) {
-          console.error("Auth authorize callback error:", error);
+          console.error("Auth authorize error:", error);
           return null;
         }
       },
     }),
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google" && user.email) {
+        try {
+          const dbUser = await findOrCreateOAuthUser({
+            email: user.email,
+            name: user.name || null,
+            image: user.image || null,
+            provider: "google",
+          });
+          user.id = dbUser.id;
+        } catch (error) {
+          console.error("Error creating/syncing OAuth user in PostgreSQL:", error);
+        }
+      }
+      return true;
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+      } else if (token.email && !token.id) {
+        const dbUser = await findUserByEmail(token.email);
+        if (dbUser) {
+          token.id = dbUser.id;
+        }
       }
       return token;
     },

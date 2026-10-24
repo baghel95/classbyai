@@ -287,6 +287,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
   // Get settings from store
   const _modelId = useSettingsStore((state) => state.modelId);
+  const providerId = useSettingsStore((state) => state.providerId);
   const providersConfig = useSettingsStore((state) => state.providersConfig);
   const pdfProviderId = useSettingsStore((state) => state.pdfProviderId);
   const pdfProvidersConfig = useSettingsStore((state) => state.pdfProvidersConfig);
@@ -328,7 +329,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   // 语言模型列的默认选中：推广位（Kimi）而不是当前主线 provider——进面板
   // 先看到的是运营主推的服务；用户点选其他 provider 后仍以点击为准。
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
-    PINNED_PROVIDER_ID as ProviderId,
+    (providersConfig['google']?.isServerConfigured ? 'google' : undefined) ||
+    providerId ||
+    (PINNED_PROVIDER_ID as ProviderId),
   );
   const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =

@@ -304,9 +304,12 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
               }
             }
             if (!endpointPath) return null;
+            const normalizedUrl = effectiveBaseUrl.endsWith(endpointPath)
+              ? effectiveBaseUrl
+              : effectiveBaseUrl.replace(/\/+$/, '') + endpointPath;
             return (
               <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {effectiveBaseUrl + endpointPath}
+                {t('settings.requestUrl')}: {normalizedUrl}
               </p>
             );
           })()}

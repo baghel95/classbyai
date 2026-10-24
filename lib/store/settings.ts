@@ -438,6 +438,8 @@ export interface SettingsState {
   setAutoAgentCount: (count: number) => void;
   /** Set (or clear, with `undefined`) the persisted voice pick for one agent. */
   setAgentVoiceOverride: (agentId: string, voice: AgentVoiceOverride | undefined) => void;
+  classroomLanguage: 'en-IN' | 'hi-IN' | 'mr-IN';
+  setClassroomLanguage: (lang: 'en-IN' | 'hi-IN' | 'mr-IN') => void;
   setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
 
   // Layout actions
@@ -1151,6 +1153,7 @@ export const useSettingsStore = create<SettingsState>()(
         parallelSceneConcurrency: 0,
 
         autoConfigApplied: false,
+        classroomLanguage: 'en-IN',
 
         // Web Search settings (use defaults)
         ...defaultWebSearchConfig,
@@ -1344,6 +1347,39 @@ export const useSettingsStore = create<SettingsState>()(
             }
             return { agentVoiceOverrides: next };
           }),
+        setClassroomLanguage: (lang) => {
+          const overrides: Record<string, AgentVoiceOverride> = {};
+          if (lang === 'hi-IN') {
+            overrides['default-1'] = { providerId: 'sarvam-tts', voiceId: 'hi-IN:aditya' };
+            overrides['default-2'] = { providerId: 'sarvam-tts', voiceId: 'hi-IN:priya' };
+            overrides['default-3'] = { providerId: 'sarvam-tts', voiceId: 'hi-IN:rahul' };
+            overrides['default-4'] = { providerId: 'sarvam-tts', voiceId: 'hi-IN:kavya' };
+            overrides['default-5'] = { providerId: 'sarvam-tts', voiceId: 'hi-IN:dev' };
+            overrides['default-6'] = { providerId: 'sarvam-tts', voiceId: 'hi-IN:sumit' };
+          } else if (lang === 'mr-IN') {
+            overrides['default-1'] = { providerId: 'sarvam-tts', voiceId: 'mr-IN:soham' };
+            overrides['default-2'] = { providerId: 'sarvam-tts', voiceId: 'mr-IN:rupali' };
+            overrides['default-3'] = { providerId: 'sarvam-tts', voiceId: 'mr-IN:rahul' };
+            overrides['default-4'] = { providerId: 'sarvam-tts', voiceId: 'mr-IN:kavya' };
+            overrides['default-5'] = { providerId: 'sarvam-tts', voiceId: 'mr-IN:advait' };
+            overrides['default-6'] = { providerId: 'sarvam-tts', voiceId: 'mr-IN:anand' };
+          } else {
+            overrides['default-1'] = { providerId: 'sarvam-tts', voiceId: 'en-IN:aditya' };
+            overrides['default-2'] = { providerId: 'sarvam-tts', voiceId: 'en-IN:priya' };
+            overrides['default-3'] = { providerId: 'sarvam-tts', voiceId: 'en-IN:rahul' };
+            overrides['default-4'] = { providerId: 'sarvam-tts', voiceId: 'en-IN:kavya' };
+            overrides['default-5'] = { providerId: 'sarvam-tts', voiceId: 'en-IN:dev' };
+            overrides['default-6'] = { providerId: 'sarvam-tts', voiceId: 'en-IN:sumit' };
+          }
+          set((state) => ({
+            classroomLanguage: lang,
+            ttsVoice: overrides['default-1'].voiceId,
+            agentVoiceOverrides: {
+              ...state.agentVoiceOverrides,
+              ...overrides,
+            },
+          }));
+        },
         setAgentSelectionIsUserSet: (isUserSet) => set({ agentSelectionIsUserSet: isUserSet }),
 
         // Layout actions
@@ -2108,6 +2144,27 @@ export const useSettingsStore = create<SettingsState>()(
               let autoVideoEnabled: boolean | undefined;
               let autoTtsEnabled: boolean | undefined;
 
+              // TTS: select first server provider if current is not server-configured.
+              // Skip server-disabled entries — they are force-off, not selectable.
+              const serverTtsIds = Object.entries(data.tts || {})
+                .filter(([, info]) => !info.disabled)
+                .map(([id]) => id) as TTSProviderId[];
+              if (
+                serverTtsIds.length > 0 &&
+                !newTTSConfig[state.ttsProviderId]?.isServerConfigured
+              ) {
+                autoTtsProvider = serverTtsIds[0];
+                autoTtsVoice =
+                  DEFAULT_TTS_VOICES[autoTtsProvider as BuiltInTTSProviderId] || 'default';
+                autoTtsEnabled = true;
+              } else if (
+                serverTtsIds.length > 0 &&
+                !state.ttsEnabled &&
+                !state.autoConfigApplied
+              ) {
+                autoTtsEnabled = true;
+              }
+
               if (!state.autoConfigApplied) {
                 // PDF: unpdf → mineru-cloud or mineru if server has it
                 if (state.pdfProviderId === 'unpdf') {
@@ -2118,25 +2175,6 @@ export const useSettingsStore = create<SettingsState>()(
                   }
                 }
 
-                // TTS: select first server provider if current is not server-configured.
-                // Skip server-disabled entries — they are force-off, not selectable.
-                const serverTtsIds = Object.entries(data.tts || {})
-                  .filter(([, info]) => !info.disabled)
-                  .map(([id]) => id) as TTSProviderId[];
-                if (
-                  serverTtsIds.length > 0 &&
-                  !newTTSConfig[state.ttsProviderId]?.isServerConfigured
-                ) {
-                  autoTtsProvider = serverTtsIds[0];
-                  autoTtsVoice =
-                    DEFAULT_TTS_VOICES[autoTtsProvider as BuiltInTTSProviderId] || 'default';
-                }
-                // Auto-enable TTS on first run when a server provider exists
-                // (mirrors image/video). No provider ⇒ stays off + CTA.
-                if (serverTtsIds.length > 0 && !state.ttsEnabled) {
-                  autoTtsEnabled = true;
-                }
-
                 // ASR: select first server provider if current is not
                 // server-configured. Skip server-disabled entries — they are
                 // force-off, not selectable.
@@ -2145,7 +2183,7 @@ export const useSettingsStore = create<SettingsState>()(
                   .map(([id]) => id) as ASRProviderId[];
                 if (
                   serverAsrIds.length > 0 &&
-                  !newASRConfig[state.asrProviderId]?.isServerConfigured
+                  (!newASRConfig[state.asrProviderId]?.isServerConfigured || !state.autoConfigApplied)
                 ) {
                   autoAsrProvider = serverAsrIds[0];
                   autoAsrLanguage = getValidASRLanguage(autoAsrProvider, state.asrLanguage);
@@ -2215,6 +2253,9 @@ export const useSettingsStore = create<SettingsState>()(
                 ...(validTTSProvider !== state.ttsProviderId && {
                   ttsProviderId: validTTSProvider as TTSProviderId,
                   ttsVoice: validTTSVoice,
+                  ...(newTTSConfig[validTTSProvider as TTSProviderId]?.isServerConfigured && !state.ttsEnabled
+                    ? { ttsEnabled: true }
+                    : {}),
                 }),
                 ...(validASRProvider !== state.asrProviderId && {
                   asrProviderId: validASRProvider as ASRProviderId,

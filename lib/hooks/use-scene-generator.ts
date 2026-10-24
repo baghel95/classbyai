@@ -97,6 +97,8 @@ function getApiHeaders(): HeadersInit {
     // Media generation toggles
     'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
     'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
+    // Authoritative classroom language selected by user
+    'x-user-locale': settings.classroomLanguage || 'en-IN',
   };
 }
 

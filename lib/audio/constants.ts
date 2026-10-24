@@ -1357,7 +1357,11 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.sarvam.ai',
     icon: '/logos/sarvam.svg',
-    models: [{ id: 'saaras:v3', name: 'Saaras v3' }],
+    models: [
+      { id: 'saaras:v3', name: 'Saaras v3' },
+      { id: 'saaras:v4', name: 'Saaras v4' },
+      { id: 'saarika:v2.5', name: 'Saarika v2.5' },
+    ],
     defaultModelId: 'saaras:v3',
     supportedLanguages: [
       'en-IN',

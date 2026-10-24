@@ -464,8 +464,24 @@ export async function POST(req: NextRequest) {
       return apiError('INTERNAL_ERROR', 500, 'Prompt template not found');
     }
 
+    // Authoritative classroom language enforcement
+    const userLocale = req.headers?.get('x-user-locale')?.trim() || '';
+    if (userLocale.startsWith('hi')) {
+      const hiDirective = '\n\n**CRITICAL MANDATORY INSTRUCTION: The user has selected Hindi (हिन्दी). You MUST generate all scene outlines, titles, descriptions, and the languageDirective strictly in Hindi (Devanagari script). The languageDirective field must mandate that all teacher explanations, student dialogues, whiteboard content, and quizzes be generated exclusively in Hindi (हिन्दी).**';
+      prompts.system += hiDirective;
+      prompts.user += hiDirective;
+    } else if (userLocale.startsWith('mr')) {
+      const mrDirective = '\n\n**CRITICAL MANDATORY INSTRUCTION: The user has selected Marathi (मराठी). You MUST generate all scene outlines, titles, descriptions, and the languageDirective strictly in Marathi (Devanagari script). The languageDirective field must mandate that all teacher explanations, student dialogues, whiteboard content, and quizzes be generated exclusively in Marathi (मराठी).**';
+      prompts.system += mrDirective;
+      prompts.user += mrDirective;
+    } else if (userLocale.startsWith('en')) {
+      const enDirective = '\n\n**CRITICAL MANDATORY INSTRUCTION: The user has selected English. You MUST generate all scene outlines, titles, descriptions, and the languageDirective strictly in English. The languageDirective field must mandate that all teacher explanations, student dialogues, whiteboard content, and quizzes be generated exclusively in English.**';
+      prompts.system += enDirective;
+      prompts.user += enDirective;
+    }
+
     log.info(
-      `Generating outlines: "${requirements.requirement.substring(0, 50)}" [model=${modelString}]`,
+      `Generating outlines: "${requirements.requirement.substring(0, 50)}" [model=${modelString}, locale=${userLocale || 'default'}]`,
     );
 
     // Create SSE stream with heartbeat to prevent connection timeout

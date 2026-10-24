@@ -126,11 +126,14 @@ export interface StageListItem {
 }
 
 function stampStage(stageId: string, stage: Stage, now: number): Stage {
+  const { currentSceneId: _currentSceneId, ...cleanStage } = (stage || {}) as Stage & {
+    currentSceneId?: unknown;
+  };
   return {
-    ...stage,
+    ...cleanStage,
     id: stageId,
-    name: stage.name || 'Untitled Stage',
-    createdAt: stage.createdAt || now,
+    name: cleanStage.name || 'Untitled Stage',
+    createdAt: cleanStage.createdAt || now,
     updatedAt: now,
   };
 }
@@ -296,8 +299,9 @@ export async function saveStageData(
     }
 
     log.info(`Saved stage: ${stageId}`);
-    return failedChanges.length > 0 ? { failedChanges } : undefined;  } catch (error) {
-    log.error('Failed to save stage to Cloud:', error);
+    return failedChanges.length > 0 ? { failedChanges } : undefined;
+  } catch (error) {
+    log.error('Failed to save stage:', error);
     throw error;
   }
 }
@@ -483,10 +487,11 @@ export async function loadStageData(stageId: string, userId?: string): Promise<S
           const { loadChatSessionsWithUserId } = await import('./chat-storage');
           const chats = await loadChatSessionsWithUserId(stageId, effectiveUserId);
           log.info(`Loaded stage from Cloud: ${stageId}, scenes: ${scenes.length}, chats: ${chats.length}`);
+          const { currentSceneId: cloudCurrentSceneId, ...cleanStage } = cloudStage;
           return {
-            stage: cloudStage,
+            stage: cleanStage,
             scenes,
-            currentSceneId: cloudStage.currentSceneId || scenes[0]?.id || null,
+            currentSceneId: cloudCurrentSceneId || scenes[0]?.id || null,
             chats,
             chatSnapshot: { sessions: chats, restoreMarker: undefined },
           };
